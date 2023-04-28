@@ -1,0 +1,7 @@
+
+
+cmd
+    start --config=default.toml
+
+mintor
+    http://127.0.0.1:9761/metrics
