@@ -3,8 +3,5 @@
 cmd
     start --config=default.toml
 
-door
-    internal/coordinator.go:12
-
 mintor
     http://127.0.0.1:9761/metrics
