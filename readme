@@ -5,6 +5,8 @@ cmd
 
 mintor
     http://127.0.0.1:9761/metrics
+entrance
+    internal/coordinator.go#L12
 
 rpc
     curl http://127.0.0.1:9762/ \
