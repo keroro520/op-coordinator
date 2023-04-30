@@ -9,14 +9,14 @@ import (
 )
 
 var (
-	errors = promauto.NewGaugeVec(prometheus.GaugeOpts{
+	Metrics_errors = promauto.NewGaugeVec(prometheus.GaugeOpts{
 		Namespace: "op",
 		Subsystem: "coordinator",
 		Name:      "error",
 		Help:      "The internal error of Op_coordinator",
 	}, []string{"type"})
 
-	check = promauto.NewGaugeVec(prometheus.GaugeOpts{
+	Metrics_check = promauto.NewGaugeVec(prometheus.GaugeOpts{
 		Namespace: "op",
 		Subsystem: "coordinator",
 		Name:      "count",

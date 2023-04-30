@@ -8,6 +8,7 @@ type Config struct {
 	Sequencers SequencersConfig `toml:"sequencers" mapstructure:"sequencers"`
 	LogLevel   string           `toml:"log_level" mapstructure:"log_level"`
 	Metrics    MetricsConfig    `toml:"metrics"`
+	RPC        RpcConfig        `toml:"rpc"`
 }
 
 type NodeConfig struct {
@@ -17,4 +18,8 @@ type MetricsConfig struct {
 	Enabled bool   `toml:"enabled"`
 	Host    string `toml:"host"`
 	Port    int    `toml:"port"`
+}
+type RpcConfig struct {
+	Host string `toml:"host"`
+	Port int    `toml:"port"`
 }
