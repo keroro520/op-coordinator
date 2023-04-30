@@ -23,6 +23,10 @@ func (this *OpNodeClient) Block(ctx context.Context, peerId string) {
 	//todo self test
 }
 
+func (this *OpNodeClient) startSequencer(ctx context.Context, peerId string) {
+	//todo self test
+}
+
 func (this *OpNodeClient) IsMaster(ctx context.Context) (bool, error) {
 	//todo self test
 	var i uint8
@@ -32,7 +36,7 @@ func (this *OpNodeClient) IsMaster(ctx context.Context) (bool, error) {
 		if err != nil {
 			return *isMater, nil
 		}
-		zap.S().Warnf("Request(%v %v) SyncStatus ", this.Name, this.Url, err)
+		zap.S().Warnf("Request(%v %v) try times is  %v, IsMaster ", this.Name, this.Url, i, err)
 		if i < this.TryTimes && this.TrySleepTime > 0 {
 			time.Sleep(time.Microsecond * time.Duration(this.TrySleepTime))
 		}
@@ -48,7 +52,7 @@ func (this *OpNodeClient) Unsafe(ctx context.Context) (uint64, error) {
 		if err != nil && syncStatus != nil {
 			return syncStatus.UnsafeL2.Number, nil
 		}
-		zap.S().Warnf("Request(%v %v) SyncStatus ", this.Name, this.Url, err)
+		zap.S().Warnf("Request(%v %v) try times is %v, Unsafe ", this.Name, this.Url, i, err)
 		if i < this.TryTimes && this.TrySleepTime > 0 {
 			time.Sleep(time.Microsecond * time.Duration(this.TrySleepTime))
 		}
