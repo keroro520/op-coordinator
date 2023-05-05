@@ -21,8 +21,8 @@ func (r *RollupClient) SyncStatus(ctx context.Context) (*eth.SyncStatus, error) 
 	return output, err
 }
 
-func (r *RollupClient) IsMaster(ctx context.Context) (*bool, error) {
-	var output *bool
+func (r *RollupClient) IsMaster(ctx context.Context) (bool, error) {
+	var output bool
 	err := r.rpc.CallContext(ctx, &output, "optimism_isMaster")
 	return output, err
 }
