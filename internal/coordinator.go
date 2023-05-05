@@ -21,10 +21,9 @@ type NodeClient struct {
 	opGeth *ethclient.Client
 }
 
-// TODO opnode 通过什么方式传心跳呢？
 type Coordinator struct {
 	config     Config
-	master     Node
+	master     *Node
 	masterLock sync.Mutex
 
 	candidates []Node
@@ -37,7 +36,6 @@ type Coordinator struct {
 func NewCoordinator(ctx context.Context, config Config) *Coordinator {
 	coordinator := &Coordinator{
 		config: config,
-		master: Node{name: ""},
 	}
 	coordinator.candidates = newCandidates(config)
 	coordinator.connectNode(ctx)
@@ -69,9 +67,12 @@ func Start(config Config, ctx context.Context) {
 func (c *Coordinator) loop(ctx context.Context) {
 	for {
 		zap.S().Info("loop start.......")
-		if c.master.name == "" {
+		if c.master == nil {
 			c.selectMaster(ctx)
 			return
+		}
+		if !c.IsHealthy(c.master) {
+			c.master = nil
 		}
 	}
 }
@@ -93,7 +94,7 @@ func (c *Coordinator) connectNode(ctx context.Context) {
 }
 
 func (c *Coordinator) selectMaster(ctx context.Context) {
-	nodeStates := make(map[*eth.SyncStatus]Node)
+	nodeStates := make(map[*eth.SyncStatus]*Node)
 	for _, candidate := range c.candidates {
 		var sequencerStopped bool
 		err := candidate.client.opNode.CallContext(ctx, &sequencerStopped, "admin_sequencerStopped")
@@ -102,19 +103,17 @@ func (c *Coordinator) selectMaster(ctx context.Context) {
 		}
 
 		if sequencerStopped == false {
-			c.master = candidate
-			// todo update beat time
+			c.master = &candidate
 			return
 		}
 	}
-	// todo sleep
 	for _, candidate := range c.candidates {
 		var syncStatus *eth.SyncStatus
 		err := candidate.client.opNode.CallContext(ctx, syncStatus, "sync_status")
 		if err != nil {
 			continue
 		}
-		nodeStates[syncStatus] = candidate
+		nodeStates[syncStatus] = &candidate
 	}
 	var nodeStatesSlice []*eth.SyncStatus
 	for nodeState := range nodeStates {
@@ -123,7 +122,6 @@ func (c *Coordinator) selectMaster(ctx context.Context) {
 	sort.Slice(nodeStatesSlice, func(i, j int) bool {
 		return nodeStatesSlice[i].UnsafeL2.Number > nodeStatesSlice[j].UnsafeL2.Number
 	})
-	// todo update beat time
 	err := nodeStates[nodeStatesSlice[0]].client.opNode.CallContext(ctx, nil, "admin_startSequencer", nodeStatesSlice[0].UnsafeL2.Hash)
 	if err != nil {
 		zap.S().Error("start sequencer failed %s", nodeStates[nodeStatesSlice[0]].nodeConfig.OpNodePublicRpcUrl)
