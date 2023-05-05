@@ -10,29 +10,6 @@ import (
 	"time"
 )
 
-type Node struct {
-	OpGethUrl string
-	OpNodeUrl string
-}
-
-type NodeClient struct {
-	opGeth *ethclient.Client
-	opNode *rpc.Client
-}
-
-// TODO opnode 通过什么方式传心跳呢？
-type Coordinator struct {
-	master     Node
-	masterLock sync.Mutex
-
-	candidates       []Node
-	candidatesClient map[Node]NodeClient
-
-	healthchecks    map[Node]*map[int]error
-	healthcheckStat map[Node]int
-	lastHealthcheck int
-}
-
 // TODO configure
 var HealthcheckWindow = 300
 var HealthcheckInterval = time.Second
@@ -61,18 +38,18 @@ func (c *Coordinator) HealthcheckInBackground(ctx context.Context) {
 func (c *Coordinator) healthcheck() {
 	var wg sync.WaitGroup
 
-	errors := make(map[*Node]error, len(c.candidatesClient))
-	for node, client := range c.candidatesClient {
+	errors := make(map[*Node]error, len(c.candidates))
+	for _, node := range c.candidates {
 		wg.Add(1)
-		go func(node Node, client NodeClient) {
+		go func(node *Node, client *NodeClient) {
 			defer wg.Done()
 
 			var err error
 			if err = healthcheckOpGeth(context.Background(), client.opGeth); err == nil {
 				err = healthcheckOpNode(context.Background(), client.opNode)
 			}
-			errors[&node] = err
-		}(node, client)
+			errors[node] = err
+		}(&node, &node.client)
 	}
 	wg.Wait()
 
