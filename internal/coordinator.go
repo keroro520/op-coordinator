@@ -128,8 +128,7 @@ func (c *Coordinator) selectMaster(ctx context.Context) {
 		return nodeStatesSlice[i].UnsafeL2.Number > nodeStatesSlice[j].UnsafeL2.Number
 	})
 	// todo update beat time
-	var err *error
-	nodeStates[nodeStatesSlice[0]].client.opNode.CallContext(ctx, &err, "admin_startSequencer", nodeStatesSlice[0].UnsafeL2.Hash)
+	err := nodeStates[nodeStatesSlice[0]].client.opNode.CallContext(ctx, nil, "admin_startSequencer", nodeStatesSlice[0].UnsafeL2.Hash)
 	if err != nil {
 		zap.S().Error("start sequencer failed %s", nodeStates[nodeStatesSlice[0]].nodeConfig.OpNodePublicRpcUrl)
 		return
