@@ -3,11 +3,13 @@ package internal
 import (
 	"context"
 	"github.com/ethereum-optimism/optimism/op-node/eth"
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/rpc"
 	"go.uber.org/zap"
 	"sort"
 	"sync"
+	"time"
 )
 
 type Node struct {
@@ -65,14 +67,22 @@ func Start(config Config, ctx context.Context) {
 }
 
 func (c *Coordinator) loop(ctx context.Context) {
+	zap.S().Info("Coordinator start loop")
+	ticker := time.NewTicker(time.Second)
 	for {
-		zap.S().Info("loop start.......")
-		if c.master == nil {
-			c.selectMaster(ctx)
+		select {
+		case <-ctx.Done():
+			zap.S().Info("Coordinator exit loop")
 			return
-		}
-		if !c.IsHealthy(c.master) {
-			c.master = nil
+		case <-ticker.C:
+			if c.master == nil {
+				c.selectMaster(ctx)
+				continue
+			}
+
+			if !c.IsHealthy(c.master) {
+				c.revokeCurrentMaster()
+			}
 		}
 	}
 }
@@ -94,7 +104,6 @@ func (c *Coordinator) connectNode(ctx context.Context) {
 }
 
 func (c *Coordinator) selectMaster(ctx context.Context) {
-	nodeStates := make(map[*eth.SyncStatus]*Node)
 	for _, candidate := range c.candidates {
 		var sequencerStopped bool
 		err := candidate.client.opNode.CallContext(ctx, &sequencerStopped, "admin_sequencerStopped")
@@ -107,6 +116,8 @@ func (c *Coordinator) selectMaster(ctx context.Context) {
 			return
 		}
 	}
+
+	nodeStates := make(map[*eth.SyncStatus]*Node)
 	for _, candidate := range c.candidates {
 		var syncStatus *eth.SyncStatus
 		err := candidate.client.opNode.CallContext(ctx, syncStatus, "sync_status")
@@ -128,4 +139,17 @@ func (c *Coordinator) selectMaster(ctx context.Context) {
 		return
 	}
 	c.master = nodeStates[nodeStatesSlice[0]]
+}
+
+func (c *Coordinator) revokeCurrentMaster() {
+	zap.S().Warn("Revoke unhealthy master %s %s", c.master.name, c.master.nodeConfig.OpNodePublicRpcUrl)
+
+	var hash common.Hash
+	err := c.master.client.opNode.CallContext(context.Background(), &hash, "admin_stopSequencer")
+	if err != nil {
+		zap.S().Error("Fail to call admin_stopSequencer on %s even though its leadership was revoked, error: %+v", c.master.name, err)
+		c.master = nil
+	} else {
+		c.master = nil
+	}
 }
