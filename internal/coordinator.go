@@ -2,17 +2,19 @@ package internal
 
 import (
 	"context"
+	"github.com/ethereum-optimism/optimism/op-node/eth"
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/rpc"
 	"go.uber.org/zap"
+	"sort"
 	"sync"
-	"time"
 )
 
 type Node struct {
-	name       string
-	nodeConfig NodeConfig
-	client     NodeClient
+	name        string
+	nodeConfig  NodeConfig
+	client      NodeClient
+	blockNumber uint64
 }
 
 type NodeClient struct {
@@ -35,12 +37,13 @@ type Coordinator struct {
 	wg sync.WaitGroup
 }
 
-func NewCoordinator(config Config) *Coordinator {
+func NewCoordinator(ctx context.Context, config Config) *Coordinator {
 	coordinator := &Coordinator{
 		config: config,
 		master: Node{name: ""},
 	}
 	coordinator.candidates = newCandidates(config)
+	coordinator.connectNode(ctx)
 	return coordinator
 }
 
@@ -62,16 +65,13 @@ func Start(config Config, ctx context.Context) {
 		panic(e)
 	}
 	s.Start()
-	coordinator := NewCoordinator(config)
+	coordinator := NewCoordinator(ctx, config)
 	coordinator.loop(ctx)
 }
 
 func (c *Coordinator) loop(ctx context.Context) {
 	for {
 		zap.S().Info("loop start.......")
-		time.Sleep(time.Duration(c.config.SleepTime) * time.Second)
-		c.wg.Add(1)
-		go c.connectNode(ctx)
 		if c.master.name == "" {
 			c.selectMaster(ctx)
 			return
@@ -80,15 +80,16 @@ func (c *Coordinator) loop(ctx context.Context) {
 }
 
 func (c *Coordinator) connectNode(ctx context.Context) {
+
 	for _, v := range c.candidates {
 		opNodeClient, err := rpc.Dial(v.nodeConfig.OpNodePublicRpcUrl)
 		if err != nil {
-			zap.S().Info("dial op node failed %s", v.nodeConfig.OpNodePublicRpcUrl)
+			zap.S().Error("dial op node failed %s", v.nodeConfig.OpNodePublicRpcUrl)
 			continue
 		}
 		gethClient, err := dialEthClientWithTimeout(ctx, v.nodeConfig.OpGethPublicRpcUrl)
 		if err != nil {
-			zap.S().Info("dial op geth failed %s", v.nodeConfig.OpGethPublicRpcUrl)
+			zap.S().Error("dial op geth failed %s", v.nodeConfig.OpGethPublicRpcUrl)
 			continue
 		}
 		v.client = NodeClient{opNode: opNodeClient, opGeth: gethClient}
@@ -96,6 +97,7 @@ func (c *Coordinator) connectNode(ctx context.Context) {
 }
 
 func (c *Coordinator) selectMaster(ctx context.Context) {
+	nodeStates := make(map[*eth.SyncStatus]Node)
 	for _, candidate := range c.candidates {
 		var sequencerStopped bool
 		err := candidate.client.opNode.CallContext(ctx, &sequencerStopped, "admin_sequencerStopped")
@@ -105,7 +107,32 @@ func (c *Coordinator) selectMaster(ctx context.Context) {
 
 		if sequencerStopped == false {
 			c.master = candidate
-			break
+			// todo update beat time
+			return
 		}
 	}
+	// todo sleep
+	for _, candidate := range c.candidates {
+		var syncStatus *eth.SyncStatus
+		err := candidate.client.opNode.CallContext(ctx, syncStatus, "sync_status")
+		if err != nil {
+			continue
+		}
+		nodeStates[syncStatus] = candidate
+	}
+	var nodeStatesSlice []*eth.SyncStatus
+	for nodeState := range nodeStates {
+		nodeStatesSlice = append(nodeStatesSlice, nodeState)
+	}
+	sort.Slice(nodeStatesSlice, func(i, j int) bool {
+		return nodeStatesSlice[i].UnsafeL2.Number > nodeStatesSlice[j].UnsafeL2.Number
+	})
+	// todo update beat time
+	var output *error
+	err := nodeStates[nodeStatesSlice[0]].client.opNode.CallContext(ctx, &output, "admin_startSequencer", nodeStatesSlice[0].UnsafeL2.Hash)
+	if err != nil {
+		zap.S().Error("start sequencer failed %s", nodeStates[nodeStatesSlice[0]].nodeConfig.OpNodePublicRpcUrl)
+		return
+	}
+	c.master = nodeStates[nodeStatesSlice[0]]
 }
