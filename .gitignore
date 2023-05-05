@@ -22,3 +22,6 @@ go.work
 
 # jetbrains
 .idea/
+
+# Building artifacts
+op-coordinator
