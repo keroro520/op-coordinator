@@ -18,8 +18,8 @@ type Node struct {
 }
 
 type NodeClient struct {
-	opGeth *ethclient.Client
 	opNode *client.RollupClient
+	opGeth *ethclient.Client
 }
 
 // TODO opnode 通过什么方式传心跳呢？
@@ -56,23 +56,23 @@ func newCandidates(config Config) []Node {
 	return candidates
 }
 
-func Start(config Config) {
+func Start(config Config, ctx context.Context) {
 	startMetrics(config)
-	s, e := NewRPCServer(context.Background(), config.RPC, "v1.0")
+	s, e := NewRPCServer(ctx, config.RPC, "v1.0")
 	if e != nil {
 		panic(e)
 	}
 	s.Start()
 	coordinator := NewCoordinator(config)
-	coordinator.loop(context.Background())
+	coordinator.loop(ctx)
 }
 
 func (c *Coordinator) loop(ctx context.Context) {
 	for {
 		zap.S().Info("loop start.......")
-		c.wg.Add(1)
-		go c.nurse()
 		time.Sleep(time.Duration(c.config.SleepTime) * time.Second)
+		c.wg.Add(1)
+		go c.connectNode(ctx)
 		if c.master.name == "" {
 			c.selectMaster(ctx)
 			return
@@ -80,13 +80,25 @@ func (c *Coordinator) loop(ctx context.Context) {
 	}
 }
 
-func (c *Coordinator) selectMaster(ctx context.Context) {
+func (c *Coordinator) connectNode(ctx context.Context) {
 	for _, v := range c.candidates {
 		rollupClient, err := dialRollupClientWithTimeout(ctx, v.nodeConfig.OpNodePublicRpcUrl)
 		if err != nil {
+			zap.S().Info("dial op node failed %s", v.nodeConfig.OpNodePublicRpcUrl)
 			continue
 		}
-		master, err := rollupClient.IsMaster(ctx)
+		gethClient, err := dialEthClientWithTimeout(ctx, v.nodeConfig.OpGethPublicRpcUrl)
+		if err != nil {
+			zap.S().Info("dial op geth failed %s", v.nodeConfig.OpGethPublicRpcUrl)
+			continue
+		}
+		v.client = NodeClient{opNode: rollupClient, opGeth: gethClient}
+	}
+}
+
+func (c *Coordinator) selectMaster(ctx context.Context) {
+	for _, v := range c.candidates {
+		master, err := v.client.opNode.IsMaster(ctx)
 		if err != nil {
 			continue
 		}
@@ -95,10 +107,6 @@ func (c *Coordinator) selectMaster(ctx context.Context) {
 			return
 		}
 	}
-}
-
-func (c *Coordinator) nurse() {
-
 }
 
 func (c *Coordinator) IsHealthy(ndoe *Node) bool {

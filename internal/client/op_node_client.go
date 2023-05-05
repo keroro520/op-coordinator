@@ -34,7 +34,7 @@ func (this *OpNodeClient) IsMaster(ctx context.Context) (bool, error) {
 	for i = 0; i <= this.TryTimes; i++ {
 		isMater, err := this.RollupClient.IsMaster(ctx)
 		if err != nil {
-			return *isMater, nil
+			return isMater, nil
 		}
 		zap.S().Warnf("Request(%v %v) try times is  %v, IsMaster ", this.Name, this.Url, i, err)
 		if i < this.TryTimes && this.TrySleepTime > 0 {

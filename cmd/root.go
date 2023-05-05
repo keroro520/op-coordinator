@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"context"
 	"fmt"
 	"github.com/node-real/op-coordinator/internal"
 	"github.com/spf13/cobra"
@@ -43,7 +44,7 @@ func StartCommand() *cobra.Command {
 
 func startHandleFunc(cmd *cobra.Command, args []string) error {
 	fmt.Printf("start service, version is %v\n", Version)
-	internal.Start(config)
+	internal.Start(config, context.Background())
 	return nil
 }
 
