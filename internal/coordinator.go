@@ -11,10 +11,9 @@ import (
 )
 
 type Node struct {
-	name        string
-	nodeConfig  NodeConfig
-	client      NodeClient
-	blockNumber uint64
+	name       string
+	nodeConfig NodeConfig
+	client     NodeClient
 }
 
 type NodeClient struct {
@@ -33,8 +32,6 @@ type Coordinator struct {
 	healthchecks    map[Node]*map[int]error
 	healthcheckStat map[Node]int
 	lastHealthcheck int
-
-	wg sync.WaitGroup
 }
 
 func NewCoordinator(ctx context.Context, config Config) *Coordinator {
@@ -80,19 +77,18 @@ func (c *Coordinator) loop(ctx context.Context) {
 }
 
 func (c *Coordinator) connectNode(ctx context.Context) {
-
-	for _, v := range c.candidates {
-		opNodeClient, err := rpc.Dial(v.nodeConfig.OpNodePublicRpcUrl)
+	for _, candidate := range c.candidates {
+		opNodeClient, err := rpc.Dial(candidate.nodeConfig.OpNodePublicRpcUrl)
 		if err != nil {
-			zap.S().Error("dial op node failed %s", v.nodeConfig.OpNodePublicRpcUrl)
+			zap.S().Error("dial op node failed %s", candidate.nodeConfig.OpNodePublicRpcUrl)
 			continue
 		}
-		gethClient, err := dialEthClientWithTimeout(ctx, v.nodeConfig.OpGethPublicRpcUrl)
+		gethClient, err := dialEthClientWithTimeout(ctx, candidate.nodeConfig.OpGethPublicRpcUrl)
 		if err != nil {
-			zap.S().Error("dial op geth failed %s", v.nodeConfig.OpGethPublicRpcUrl)
+			zap.S().Error("dial op geth failed %s", candidate.nodeConfig.OpGethPublicRpcUrl)
 			continue
 		}
-		v.client = NodeClient{opNode: opNodeClient, opGeth: gethClient}
+		candidate.client = NodeClient{opNode: opNodeClient, opGeth: gethClient}
 	}
 }
 
