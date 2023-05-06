@@ -17,8 +17,8 @@ func contains(array []int, elem int) bool {
 func testHealthcheck(t *testing.T, hcCnt int, errIndexes []int, expectedHcStat int) {
 	node := Node{}
 	coordinator := Coordinator{
-		healthchecks:    make(map[Node]*map[int]error, 1),
-		healthcheckStat: make(map[Node]int),
+		healthchecks:    make(map[string]*map[int]error, 1),
+		healthcheckStat: make(map[string]int),
 		lastHealthcheck: 0,
 	}
 
@@ -32,8 +32,8 @@ func testHealthcheck(t *testing.T, hcCnt int, errIndexes []int, expectedHcStat i
 		}
 	}
 
-	if expectedHcStat != coordinator.healthcheckStat[node] {
-		t.Errorf("expected healthcheck stat: %d, actual: %d", HealthcheckWindow-1, coordinator.healthcheckStat[node])
+	if expectedHcStat != coordinator.healthcheckStat[node.name] {
+		t.Errorf("expected healthcheck stat: %d, actual: %d", HealthcheckWindow-1, coordinator.healthcheckStat[node.name])
 	}
 }
 
