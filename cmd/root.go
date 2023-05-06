@@ -33,6 +33,7 @@ func init() {
 	)
 	rootCmd.PersistentFlags().StringVar(&cfgFile, "config", "config.toml", "config file")
 }
+
 func StartCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "start",
@@ -43,8 +44,15 @@ func StartCommand() *cobra.Command {
 }
 
 func startHandleFunc(cmd *cobra.Command, args []string) error {
-	fmt.Printf("start service, version is %v\n", Version)
-	internal.Start(config, context.Background())
+	fmt.Printf("Start service, version is %v\n", Version)
+	coordinator, err := internal.NewCoordinator(config)
+	if err != nil {
+		zap.S().Error("Fail to create coordinator, error: %+v", err)
+		return err
+	}
+
+	// TODO context and signal
+	coordinator.Start(context.Background())
 	return nil
 }
 

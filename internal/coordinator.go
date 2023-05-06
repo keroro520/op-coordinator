@@ -2,81 +2,69 @@ package internal
 
 import (
 	"context"
+	"fmt"
 	"github.com/ethereum-optimism/optimism/op-node/eth"
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/ethclient"
+	"github.com/ethereum/go-ethereum/common/math"
 	"github.com/ethereum/go-ethereum/rpc"
 	"go.uber.org/zap"
-	"sort"
-	"sync"
 	"time"
 )
 
-type Node struct {
-	name       string
-	nodeConfig NodeConfig
-	client     NodeClient
-}
-
-type NodeClient struct {
-	opNode *rpc.Client
-	opGeth *ethclient.Client
-}
-
 type Coordinator struct {
-	config     Config
+	config Config
+
 	master     *Node
-	masterLock sync.Mutex
+	candidates map[string]Node
 
-	candidates []Node
-
-	healthchecks    map[Node]*map[int]error
-	healthcheckStat map[Node]int
+	healthchecks    map[string]*map[int]error
+	healthcheckStat map[string]int
 	lastHealthcheck int
 }
 
-func NewCoordinator(ctx context.Context, config Config) *Coordinator {
-	coordinator := &Coordinator{
+var ErrNoHealthyCandidates = fmt.Errorf("no healthy candidates")
+
+func NewCoordinator(config Config) (*Coordinator, error) {
+	c := Coordinator{
 		config: config,
 	}
-	coordinator.candidates = newCandidates(config)
-	coordinator.connectNode(ctx)
-	return coordinator
+
+	// Create clients for candidates
+	for nodeName, nodeCfg := range config.Candidates {
+		opNodeClient, err := rpc.Dial(nodeCfg.OpNodePublicRpcUrl)
+		if err != nil {
+			return nil, fmt.Errorf("dial OpNode error, nodeName: %s, OpNodeUrl: %s, error: %v", nodeName, nodeCfg.OpNodePublicRpcUrl, err)
+		}
+		opGethClient, err := dialEthClientWithTimeout(context.Background(), nodeCfg.OpGethPublicRpcUrl)
+		if err != nil {
+			return nil, fmt.Errorf("dial OpGeth error, nodeName: %s, OpGethUrl: %s, error: %v", nodeName, nodeCfg.OpGethPublicRpcUrl, err)
+		}
+
+		c.candidates[nodeName] = Node{
+			name:   nodeName,
+			opNode: opNodeClient,
+			opGeth: opGethClient,
+		}
+	}
+
+	return &c, nil
 }
 
-func newCandidates(config Config) []Node {
-	candidates := make([]Node, len(config.Candidates))
-	for k, v := range config.Candidates {
-		candidates = append(candidates, Node{
-			name:       k,
-			nodeConfig: *v,
-		})
-	}
-	return candidates
-}
-
-func Start(config Config, ctx context.Context) {
-	startMetrics(config)
-	s, e := NewRPCServer(ctx, config.RPC, "v1.0")
-	if e != nil {
-		panic(e)
-	}
-	s.Start()
-	coordinator := NewCoordinator(ctx, config)
-	coordinator.loop(ctx)
+func (c *Coordinator) Start(ctx context.Context) {
+	zap.S().Info("Coordinator start")
+	c.loop(ctx)
+	zap.S().Info("Coordinator exit")
 }
 
 func (c *Coordinator) loop(ctx context.Context) {
-	zap.S().Info("Coordinator start loop")
 	ticker := time.NewTicker(time.Second)
 	for {
 		select {
 		case <-ctx.Done():
-			zap.S().Info("Coordinator exit loop")
 			return
 		case <-ticker.C:
 			if c.master == nil {
-				c.selectMaster(ctx)
+				c.elect()
 				continue
 			}
 
@@ -87,69 +75,130 @@ func (c *Coordinator) loop(ctx context.Context) {
 	}
 }
 
-func (c *Coordinator) connectNode(ctx context.Context) {
-	for _, candidate := range c.candidates {
-		opNodeClient, err := rpc.Dial(candidate.nodeConfig.OpNodePublicRpcUrl)
-		if err != nil {
-			zap.S().Error("dial op node failed %s", candidate.nodeConfig.OpNodePublicRpcUrl)
-			continue
-		}
-		gethClient, err := dialEthClientWithTimeout(ctx, candidate.nodeConfig.OpGethPublicRpcUrl)
-		if err != nil {
-			zap.S().Error("dial op geth failed %s", candidate.nodeConfig.OpGethPublicRpcUrl)
-			continue
-		}
-		candidate.client = NodeClient{opNode: opNodeClient, opGeth: gethClient}
+func (c *Coordinator) revokeCurrentMaster() {
+	zap.S().Warn("Revoke unhealthy master %s", c.master.name)
+
+	var hash common.Hash
+	if err := c.master.opNode.CallContext(context.Background(), &hash, "admin_stopSequencer"); err != nil {
+		zap.S().Error("Fail to call admin_stopSequencer on %s even though its leadership will be revoked, error: %+v", c.master.name, err)
+		c.master = nil
+	} else {
+		c.master = nil
 	}
 }
 
-func (c *Coordinator) selectMaster(ctx context.Context) {
+func (c *Coordinator) elect() {
+	zap.S().Info("Start election")
+	if existingMaster := c.findExistingMaster(); existingMaster != nil {
+		c.master = existingMaster
+		return
+	}
+
+	// TODO time flag
+	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+	defer cancel()
+	_ = c.waitForConvergence(ctx)
+
+	canonical, canonicalStatus, err := c.findCanonicalCandidate()
+	if canonical == nil {
+		zap.S().Error("Fail to find canonical candidate, error: %+v", err)
+		return
+	}
+
+	err = canonical.opNode.CallContext(context.Background(), nil, "admin_startSequencer", canonicalStatus.UnsafeL2.Hash)
+	if err != nil {
+		zap.S().Error("Fail to call admin_startSequencer on %s, error: %+v", canonical.name, err)
+		return
+	}
+
+	c.master = canonical
+	zap.S().Error("Success to elect new master %s, unsafe_l2: %v", canonical.name, canonicalStatus.UnsafeL2)
+}
+
+func (c *Coordinator) findCanonicalCandidate() (*Node, *eth.SyncStatus, error) {
+	var canonical *Node
+	var canonicalStatus *eth.SyncStatus
+	for _, candidate := range c.candidates {
+		if !c.IsHealthy(&candidate) {
+			continue
+		}
+
+		var syncStatus eth.SyncStatus
+		if err := candidate.opNode.CallContext(context.Background(), &syncStatus, "optimism_syncStatus"); err != nil {
+			zap.S().Errorf("Fail to call optimism_syncStatus on %s, error: %+v", candidate.name, err)
+			continue
+		}
+
+		if canonicalStatus == nil || canonicalStatus.UnsafeL2.Number < syncStatus.UnsafeL2.Number {
+			canonical = &candidate
+			canonicalStatus = &syncStatus
+		}
+	}
+
+	if canonical == nil {
+		return nil, nil, ErrNoHealthyCandidates
+	}
+	return canonical, canonicalStatus, nil
+}
+
+func (c *Coordinator) findExistingMaster() *Node {
 	for _, candidate := range c.candidates {
 		var sequencerStopped bool
-		err := candidate.client.opNode.CallContext(ctx, &sequencerStopped, "admin_sequencerStopped")
+		err := candidate.opNode.CallContext(context.Background(), &sequencerStopped, "admin_sequencerStopped")
 		if err != nil {
 			continue
 		}
 
 		if sequencerStopped == false {
-			c.master = &candidate
-			return
+			return &candidate
 		}
 	}
 
-	nodeStates := make(map[*eth.SyncStatus]*Node)
-	for _, candidate := range c.candidates {
-		var syncStatus *eth.SyncStatus
-		err := candidate.client.opNode.CallContext(ctx, syncStatus, "sync_status")
-		if err != nil {
-			continue
-		}
-		nodeStates[syncStatus] = &candidate
-	}
-	var nodeStatesSlice []*eth.SyncStatus
-	for nodeState := range nodeStates {
-		nodeStatesSlice = append(nodeStatesSlice, nodeState)
-	}
-	sort.Slice(nodeStatesSlice, func(i, j int) bool {
-		return nodeStatesSlice[i].UnsafeL2.Number > nodeStatesSlice[j].UnsafeL2.Number
-	})
-	err := nodeStates[nodeStatesSlice[0]].client.opNode.CallContext(ctx, nil, "admin_startSequencer", nodeStatesSlice[0].UnsafeL2.Hash)
-	if err != nil {
-		zap.S().Error("start sequencer failed %s", nodeStates[nodeStatesSlice[0]].nodeConfig.OpNodePublicRpcUrl)
-		return
-	}
-	c.master = nodeStates[nodeStatesSlice[0]]
+	return nil
 }
 
-func (c *Coordinator) revokeCurrentMaster() {
-	zap.S().Warn("Revoke unhealthy master %s %s", c.master.name, c.master.nodeConfig.OpNodePublicRpcUrl)
+func (c *Coordinator) waitForConvergence(ctx context.Context) bool {
+	zap.S().Info("Wait nodes to converge on the same height")
 
-	var hash common.Hash
-	err := c.master.client.opNode.CallContext(context.Background(), &hash, "admin_stopSequencer")
-	if err != nil {
-		zap.S().Error("Fail to call admin_stopSequencer on %s even though its leadership was revoked, error: %+v", c.master.name, err)
-		c.master = nil
-	} else {
-		c.master = nil
+	ticker := time.NewTicker(10 * time.Millisecond)
+	for {
+		select {
+		case <-ctx.Done():
+			zap.S().Warn("Timeout waiting for candidates to converge on the same height")
+			return false
+		case <-ticker.C:
+			if c.candidatesConverged() {
+				zap.S().Infof("Candidates have converged on the same height")
+				return true
+			}
+		}
 	}
+}
+
+func (c *Coordinator) candidatesConverged() bool {
+	var height uint64 = math.MaxUint64
+
+	for _, node := range c.candidates {
+		if !c.IsHealthy(&node) {
+			continue
+		}
+
+		var syncStatus eth.SyncStatus
+		err := node.opNode.CallContext(context.Background(), &syncStatus, "optimism_syncStatus")
+		if err != nil {
+			// It should be a rare possibility since we have checked `IsHealthy` before
+			// Return false and retry
+			zap.S().Errorf("Fail to call optimism_syncStatus on %s, error: %+v", node.name, err)
+			return false
+		}
+
+		if height == 0 {
+			height = syncStatus.UnsafeL2.Number
+		} else if height != syncStatus.UnsafeL2.Number {
+			// Return false and retry outside
+			return false
+		}
+	}
+
+	return height != math.MaxUint64
 }
