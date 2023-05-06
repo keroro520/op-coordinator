@@ -2,62 +2,38 @@ package client
 
 import (
 	"context"
-	"github.com/ethereum-optimism/optimism/op-node/p2p"
-	"github.com/libp2p/go-libp2p/core/peer"
-	"go.uber.org/zap"
-	"time"
+	"github.com/ethereum-optimism/optimism/op-node/client"
+	"github.com/ethereum-optimism/optimism/op-node/eth"
+	"github.com/ethereum/go-ethereum/common"
 )
 
 type OpNodeClient struct {
-	Name         string
-	Url          string
-	RollupClient RollupClient
-	p2pClient    p2p.Client
-	TryTimes     uint8
-	TrySleepTime uint64
+	rpc client.RPC
 }
 
-func (this *OpNodeClient) Block(ctx context.Context, peerId string) {
-	this.p2pClient.BlockPeer(ctx, peer.ID(peerId))
-	this.p2pClient.DisconnectPeer(ctx, peer.ID(peerId))
-	//todo self test
+func NewOpNodeClient(rpc client.RPC) *OpNodeClient {
+	return &OpNodeClient{rpc}
 }
 
-func (this *OpNodeClient) startSequencer(ctx context.Context, peerId string) {
-	//todo self test
+func (r *OpNodeClient) SyncStatus(ctx context.Context) (*eth.SyncStatus, error) {
+	var output *eth.SyncStatus
+	err := r.rpc.CallContext(ctx, &output, "optimism_syncStatus")
+	return output, err
 }
 
-func (this *OpNodeClient) IsMaster(ctx context.Context) (bool, error) {
-	//todo self test
-	var i uint8
-	var err error
-	for i = 0; i <= this.TryTimes; i++ {
-		isMater, err := this.RollupClient.IsMaster(ctx)
-		if err != nil {
-			return isMater, nil
-		}
-		zap.S().Warnf("Request(%v %v) try times is  %v, IsMaster ", this.Name, this.Url, i, err)
-		if i < this.TryTimes && this.TrySleepTime > 0 {
-			time.Sleep(time.Microsecond * time.Duration(this.TrySleepTime))
-		}
-	}
-	return false, err
-
+func (r *OpNodeClient) SequencerStopped(ctx context.Context) (bool, error) {
+	var output bool
+	err := r.rpc.CallContext(ctx, &output, "admin_sequencerStopped")
+	return output, err
 }
-func (this *OpNodeClient) Unsafe(ctx context.Context) (uint64, error) {
-	var i uint8
-	var err error
-	for i = 0; i <= this.TryTimes; i++ {
-		syncStatus, err := this.RollupClient.SyncStatus(ctx)
-		if err != nil && syncStatus != nil {
-			return syncStatus.UnsafeL2.Number, nil
-		}
-		zap.S().Warnf("Request(%v %v) try times is %v, Unsafe ", this.Name, this.Url, i, err)
-		if i < this.TryTimes && this.TrySleepTime > 0 {
-			time.Sleep(time.Microsecond * time.Duration(this.TrySleepTime))
-		}
 
-	}
-	return 0, err
-	//todo self test
+func (r *OpNodeClient) StartSequencer(ctx context.Context, blockHash common.Hash) error {
+	err := r.rpc.CallContext(ctx, nil, "admin_startSequencer", blockHash)
+	return err
+}
+
+func (r *OpNodeClient) StopSequencer(ctx context.Context) (*common.Hash, error) {
+	var output *common.Hash
+	err := r.rpc.CallContext(ctx, &output, "admin_stopSequencer")
+	return output, err
 }
