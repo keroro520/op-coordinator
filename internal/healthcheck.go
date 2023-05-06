@@ -12,8 +12,8 @@ import (
 
 var ErrUninitializedHealthcheck = fmt.Errorf("uninitialized healthcheck")
 
-func (c *Coordinator) IsHealthy(node *Node) bool {
-	return c.healthcheckStat[node.name] >= c.config.HealthCheckThreshold
+func (c *Coordinator) IsHealthy(nodeName string) bool {
+	return c.healthcheckStat[nodeName] >= c.config.HealthCheckThreshold
 }
 
 func (c *Coordinator) HealthcheckInBackground(ctx context.Context) {
@@ -35,17 +35,17 @@ func (c *Coordinator) healthcheck() {
 	c.lastHealthcheck = (c.lastHealthcheck + 1) % window
 
 	var wg sync.WaitGroup
-	for nodeName, node := range c.candidates {
+	for nodeName, node := range c.nodes {
 		wg.Add(1)
-		go func(nodeName *string, node *Node) {
+		go func(nodeName string, node *Node) {
 			defer wg.Done()
 
 			var err error
 			if err = healthcheckOpGeth(context.Background(), node.opGeth); err == nil {
 				err = healthcheckOpNode(context.Background(), node.opNode)
 			}
-			c.onHealthcheckResult(*nodeName, err)
-		}(&nodeName, &node)
+			c.onHealthcheckResult(nodeName, err)
+		}(nodeName, node)
 	}
 	wg.Wait()
 }
