@@ -4,14 +4,17 @@ type BridgesConfig map[string]*NodeConfig
 type CandidatesConfig map[string]*NodeConfig
 
 type Config struct {
-	Bridges              BridgesConfig    `toml:"bridges" mapstructure:"bridges"`
-	Candidates           CandidatesConfig `toml:"candidates" mapstructure:"candidates"`
-	LogLevel             string           `toml:"log_level" mapstructure:"log_level"`
-	Metrics              MetricsConfig    `toml:"metrics"`
-	RPC                  RpcConfig        `toml:"rpc"`
-	SleepTime            uint             `toml:"sleep_time"`
-	HealthCheckWindow    uint             `toml:"health_check_window"`
-	HealthCheckThreshold uint             `toml:"health_check_threshold"`
+	Bridges    BridgesConfig    `toml:"bridges" mapstructure:"bridges"`
+	Candidates CandidatesConfig `toml:"candidates" mapstructure:"candidates"`
+	LogLevel   string           `toml:"log_level" mapstructure:"log_level"`
+	Metrics    MetricsConfig    `toml:"metrics"`
+	RPC        RpcConfig        `toml:"rpc"`
+	SleepTime  uint             `toml:"sleep_time"`
+
+	HealthCheckIntervalMs       int64 `toml:"health_check_interval_ms"`
+	HealthCheckWindow           int   `toml:"health_check_window"`
+	HealthCheckThreshold        int   `toml:"health_check_threshold"`
+	MaxConvergenceWaitingTimeMs int64 `toml:"max_convergence_waiting_time_ms"`
 }
 
 type NodeConfig struct {

@@ -10,20 +10,15 @@ import (
 	"time"
 )
 
-// TODO configure
-var HealthcheckWindow = 300
-var HealthcheckInterval = time.Second
-var HealthcheckThreshold = 10
-
 var ErrUninitializedHealthcheck = fmt.Errorf("uninitialized healthcheck")
 
 func (c *Coordinator) IsHealthy(node *Node) bool {
-	return c.healthcheckStat[node.name] >= HealthcheckThreshold
+	return c.healthcheckStat[node.name] >= c.config.HealthCheckThreshold
 }
 
 func (c *Coordinator) HealthcheckInBackground(ctx context.Context) {
 	go func() {
-		ticker := time.NewTicker(HealthcheckInterval)
+		ticker := time.NewTicker(time.Duration(c.config.HealthCheckIntervalMs) * time.Millisecond)
 		for {
 			select {
 			case <-ctx.Done():
@@ -36,49 +31,46 @@ func (c *Coordinator) HealthcheckInBackground(ctx context.Context) {
 }
 
 func (c *Coordinator) healthcheck() {
-	var wg sync.WaitGroup
+	window := c.config.HealthCheckWindow
+	c.lastHealthcheck = (c.lastHealthcheck + 1) % window
 
-	results := make(map[*Node]error, len(c.candidates))
-	for _, node := range c.candidates {
+	var wg sync.WaitGroup
+	for nodeName, node := range c.candidates {
 		wg.Add(1)
-		go func(node *Node) {
+		go func(nodeName *string, node *Node) {
 			defer wg.Done()
 
 			var err error
 			if err = healthcheckOpGeth(context.Background(), node.opGeth); err == nil {
 				err = healthcheckOpNode(context.Background(), node.opNode)
 			}
-			results[node] = err
-		}(&node)
+			c.onHealthcheckResult(*nodeName, err)
+		}(&nodeName, &node)
 	}
 	wg.Wait()
-
-	c.updateHealthchecks(&results)
 }
 
-func (c *Coordinator) updateHealthchecks(results *map[*Node]error) {
-	c.lastHealthcheck = (c.lastHealthcheck + 1) % HealthcheckWindow
+func (c *Coordinator) onHealthcheckResult(nodeName string, result error) {
+	window := c.config.HealthCheckWindow
+	previousResult := (*c.healthchecks[nodeName])[c.lastHealthcheck%window]
 
-	for node, err := range *results {
-		// Initialize for fresh nodes
-		if c.healthchecks[node.name] == nil {
-			c.healthchecks[node.name] = &map[int]error{}
-			for i := 0; i < HealthcheckWindow; i++ {
-				(*c.healthchecks[node.name])[i] = ErrUninitializedHealthcheck
-			}
-			c.healthcheckStat[node.name] = HealthcheckWindow
+	// Initialize for fresh nodes
+	if c.healthchecks[nodeName] == nil {
+		c.healthchecks[nodeName] = &map[int]error{}
+		for i := 0; i < window; i++ {
+			(*c.healthchecks[nodeName])[i] = ErrUninitializedHealthcheck
 		}
+		c.healthcheckStat[nodeName] = window
+	}
 
-		// Update c.healthchecks for the node
-		previous := (*c.healthchecks[node.name])[c.lastHealthcheck%HealthcheckWindow]
-		(*c.healthchecks[node.name])[c.lastHealthcheck%HealthcheckWindow] = err
+	// Update c.healthchecks for the node
+	(*c.healthchecks[nodeName])[c.lastHealthcheck%window] = result
 
-		// Update healthcheckStat when the node's status changed
-		if previous == nil && err != nil {
-			c.healthcheckStat[node.name]++
-		} else if previous != nil && err == nil {
-			c.healthcheckStat[node.name]--
-		}
+	// Update healthcheckStat when the node's status changed
+	if previousResult == nil && result != nil {
+		c.healthcheckStat[nodeName]++
+	} else if previousResult != nil && result == nil {
+		c.healthcheckStat[nodeName]--
 	}
 }
 

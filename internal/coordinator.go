@@ -5,9 +5,9 @@ import (
 	"fmt"
 	"github.com/ethereum-optimism/optimism/op-node/eth"
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/common/math"
 	"github.com/ethereum/go-ethereum/rpc"
 	"go.uber.org/zap"
+	"sync"
 	"time"
 )
 
@@ -57,7 +57,7 @@ func (c *Coordinator) Start(ctx context.Context) {
 }
 
 func (c *Coordinator) loop(ctx context.Context) {
-	ticker := time.NewTicker(time.Second)
+	ticker := time.NewTicker(50 * time.Millisecond)
 	for {
 		select {
 		case <-ctx.Done():
@@ -94,8 +94,7 @@ func (c *Coordinator) elect() {
 		return
 	}
 
-	// TODO time flag
-	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(c.config.MaxConvergenceWaitingTimeMs)*time.Millisecond)
 	defer cancel()
 	_ = c.waitForConvergence(ctx)
 
@@ -176,29 +175,36 @@ func (c *Coordinator) waitForConvergence(ctx context.Context) bool {
 }
 
 func (c *Coordinator) candidatesConverged() bool {
-	var height uint64 = math.MaxUint64
+	var channel = make(chan uint64, len(c.candidates))
+	var wg sync.WaitGroup
 
 	for _, node := range c.candidates {
 		if !c.IsHealthy(&node) {
 			continue
 		}
 
-		var syncStatus eth.SyncStatus
-		err := node.opNode.CallContext(context.Background(), &syncStatus, "optimism_syncStatus")
-		if err != nil {
-			// It should be a rare possibility since we have checked `IsHealthy` before
-			// Return false and retry
-			zap.S().Errorf("Fail to call optimism_syncStatus on %s, error: %+v", node.name, err)
-			return false
-		}
+		wg.Add(1)
+		go func(node *Node) {
+			defer wg.Done()
 
-		if height == 0 {
-			height = syncStatus.UnsafeL2.Number
-		} else if height != syncStatus.UnsafeL2.Number {
-			// Return false and retry outside
+			var syncStatus eth.SyncStatus
+			if err := node.opNode.CallContext(context.Background(), &syncStatus, "optimism_syncStatus"); err != nil {
+				zap.S().Errorf("Fail to call optimism_syncStatus on %s, error: %+v", node.name, err)
+				return
+			}
+
+			channel <- syncStatus.UnsafeL2.Number
+		}(&node)
+	}
+	wg.Wait()
+
+	var convergence uint64
+	for unsafeL2 := range channel {
+		if convergence == 0 {
+			convergence = unsafeL2
+		} else if convergence != unsafeL2 {
 			return false
 		}
 	}
-
-	return height != math.MaxUint64
+	return true
 }

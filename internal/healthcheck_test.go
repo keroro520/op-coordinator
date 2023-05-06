@@ -5,6 +5,8 @@ import (
 	"testing"
 )
 
+var HealthcheckWindow = 20
+
 func contains(array []int, elem int) bool {
 	for _, e := range array {
 		if elem == e {
@@ -17,6 +19,7 @@ func contains(array []int, elem int) bool {
 func testHealthcheck(t *testing.T, hcCnt int, errIndexes []int, expectedHcStat int) {
 	node := Node{}
 	coordinator := Coordinator{
+		config:          Config{HealthCheckWindow: HealthcheckWindow},
 		healthchecks:    make(map[string]*map[int]error, 1),
 		healthcheckStat: make(map[string]int),
 		lastHealthcheck: 0,
