@@ -16,9 +16,7 @@ type Coordinator struct {
 	master *Node
 	nodes  map[string]*Node
 
-	healthchecks    map[string]*map[int]error
-	healthcheckStat map[string]int
-	lastHealthcheck int
+	healthChecker *HealthChecker
 }
 
 var ErrNoHealthyCandidates = fmt.Errorf("no healthy candidates")
@@ -26,6 +24,10 @@ var ErrNoHealthyCandidates = fmt.Errorf("no healthy candidates")
 func NewCoordinator(config Config) (*Coordinator, error) {
 	c := Coordinator{
 		config: config,
+		healthChecker: NewHealthChecker(
+			time.Duration(config.HealthCheck.IntervalMs)*time.Millisecond,
+			config.HealthCheck.FailureThresholdLast5,
+		),
 	}
 
 	// Create clients for nodes
@@ -64,23 +66,26 @@ func (c *Coordinator) loop(ctx context.Context) {
 				continue
 			}
 
-			if !c.IsHealthy(c.master.name) {
+			if !c.healthChecker.IsHealthy(c.master.name) {
 				c.revokeCurrentMaster()
 			}
 		}
 	}
 }
 
+// revokeCurrentMaster revokes the leadership of the current master.
 func (c *Coordinator) revokeCurrentMaster() {
-	zap.S().Warn("Revoke unhealthy master %s", c.master.name)
+	zap.S().Warnf("Revoke unhealthy master %s", c.master.name)
 
+	// Stop the sequencer by calling admin_stopSequencer
+	// It's fine even if the call fails because the leadership will be revoked anyway and the node is unable to
+	// produce blocks.
 	var hash common.Hash
 	if err := c.master.opNode.CallContext(context.Background(), &hash, "admin_stopSequencer"); err != nil {
-		zap.S().Error("Fail to call admin_stopSequencer on %s even though its leadership will be revoked, error: %+v", c.master.name, err)
-		c.master = nil
-	} else {
-		c.master = nil
+		zap.S().Errorw("Fail to call admin_stopSequencer even though its leadership will be revoked", "node", c.master.name, "error", err)
 	}
+
+	c.master = nil
 }
 
 func (c *Coordinator) elect() {
@@ -90,24 +95,24 @@ func (c *Coordinator) elect() {
 		return
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(c.config.MaxConvergenceWaitingTimeMs)*time.Millisecond)
+	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(c.config.Election.MaxWaitingTimeForConvergenceMs)*time.Millisecond)
 	defer cancel()
 	_ = c.waitForConvergence(ctx)
 
 	canonical, canonicalStatus, err := c.findCanonicalCandidate()
 	if canonical == nil {
-		zap.S().Error("Fail to find canonical candidate, error: %+v", err)
+		zap.S().Errorw("Fail to find canonical candidate", "error", err)
 		return
 	}
 
 	err = canonical.opNode.CallContext(context.Background(), nil, "admin_startSequencer", canonicalStatus.UnsafeL2.Hash)
 	if err != nil {
-		zap.S().Error("Fail to call admin_startSequencer on %s, error: %+v", canonical.name, err)
+		zap.S().Errorw("Fail to call admin_startSequencer", "node", canonical.name, "error", err)
 		return
 	}
 
 	c.master = canonical
-	zap.S().Error("Success to elect new master %s, unsafe_l2: %v", canonical.name, canonicalStatus.UnsafeL2)
+	zap.S().Infow("Success to elect new master", "node", canonical.name, "unsafe_l2", canonicalStatus.UnsafeL2)
 }
 
 func (c *Coordinator) waitForConvergence(ctx context.Context) bool {
@@ -128,12 +133,14 @@ func (c *Coordinator) waitForConvergence(ctx context.Context) bool {
 	}
 }
 
+// nodesConverged checks if all healthy nodes have the same unsafe_l2 height
 func (c *Coordinator) nodesConverged() bool {
-	var channel = make(chan uint64, len(c.nodes))
+	var convergence uint64 = 0
+	var resultCh = make(chan uint64, len(c.nodes))
 	var wg sync.WaitGroup
 
-	for nodeName, node := range c.nodes {
-		if !c.IsHealthy(nodeName) {
+	for _, node := range c.nodes {
+		if !c.healthChecker.IsHealthy(node.name) {
 			continue
 		}
 
@@ -141,19 +148,18 @@ func (c *Coordinator) nodesConverged() bool {
 		go func(node *Node) {
 			defer wg.Done()
 
-			var syncStatus eth.SyncStatus
-			if err := node.opNode.CallContext(context.Background(), &syncStatus, "optimism_syncStatus"); err != nil {
-				zap.S().Errorf("Fail to call optimism_syncStatus on %s, error: %+v", node.name, err)
+			var syncStatus *eth.SyncStatus
+			if err := node.opNode.CallContext(context.Background(), syncStatus, "optimism_syncStatus"); err != nil {
+				zap.S().Errorw("Fail to call optimism_syncStatus", "node", node.name, "error", err)
 				return
 			}
 
-			channel <- syncStatus.UnsafeL2.Number
+			resultCh <- syncStatus.UnsafeL2.Number
 		}(node)
 	}
 	wg.Wait()
 
-	var convergence uint64
-	for unsafeL2 := range channel {
+	for unsafeL2 := range resultCh {
 		if convergence == 0 {
 			convergence = unsafeL2
 		} else if convergence != unsafeL2 {
@@ -167,19 +173,20 @@ func (c *Coordinator) isCandidate(nodeName string) bool {
 	return c.config.Candidates[nodeName] != nil
 }
 
+// findCanonicalCandidate finds the candidate with the highest unsafe_l2 height
 func (c *Coordinator) findCanonicalCandidate() (*Node, *eth.SyncStatus, error) {
 	var canonical *Node
 	var canonicalStatus *eth.SyncStatus
 	for nodeName := range c.config.Candidates {
 		// Filter healthy candidates
-		if !c.isCandidate(nodeName) || !c.IsHealthy(nodeName) {
+		if !c.isCandidate(nodeName) || !c.healthChecker.IsHealthy(nodeName) {
 			continue
 		}
 
 		candidate := c.nodes[nodeName]
 		var syncStatus eth.SyncStatus
 		if err := candidate.opNode.CallContext(context.Background(), &syncStatus, "optimism_syncStatus"); err != nil {
-			zap.S().Errorf("Fail to call optimism_syncStatus on %s, error: %+v", candidate.name, err)
+			zap.S().Errorw("Fail to call optimism_syncStatus", "node", candidate.name, "error", candidate.name, err)
 			continue
 		}
 
@@ -195,10 +202,11 @@ func (c *Coordinator) findCanonicalCandidate() (*Node, *eth.SyncStatus, error) {
 	return canonical, canonicalStatus, nil
 }
 
+// findExistingMaster returns the existing master if it is healthy and its admin_sequencerStopped is false
 func (c *Coordinator) findExistingMaster() *Node {
 	for nodeName := range c.config.Candidates {
 		// Filter healthy candidates
-		if !c.isCandidate(nodeName) || !c.IsHealthy(nodeName) {
+		if !c.isCandidate(nodeName) || !c.healthChecker.IsHealthy(nodeName) {
 			continue
 		}
 

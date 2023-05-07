@@ -1,75 +1,91 @@
 package internal
 
 import (
-	"fmt"
+	"reflect"
 	"testing"
 )
 
-var HealthcheckWindow = 20
+func TestCumulativeSlidingWindow_Add(t *testing.T) {
+	windowSize := CumulativeSlidingWindowSize
 
-func contains(array []int, elem int) bool {
-	for _, e := range array {
-		if elem == e {
-			return true
-		}
+	type args struct {
+		failures []bool
 	}
-	return false
-}
-
-func testHealthcheck(t *testing.T, hcCnt int, errIndexes []int, expectedHcStat int) {
-	node := Node{}
-	coordinator := Coordinator{
-		config:          Config{HealthCheckWindow: HealthcheckWindow},
-		healthchecks:    make(map[string]*map[int]error, 1),
-		healthcheckStat: make(map[string]int),
-		lastHealthcheck: 0,
-	}
-
-	for i := 0; i < hcCnt; i++ {
-		if contains(errIndexes, i) {
-			errors := map[*Node]error{&node: fmt.Errorf("nah")}
-			coordinator.updateHealthchecks(&errors)
-		} else {
-			errors := map[*Node]error{&node: nil}
-			coordinator.updateHealthchecks(&errors)
-		}
-	}
-
-	if expectedHcStat != coordinator.healthcheckStat[node.name] {
-		t.Errorf("expected healthcheck stat: %d, actual: %d", HealthcheckWindow-1, coordinator.healthcheckStat[node.name])
-	}
-}
-
-func TestUpdateHealthcheck(t *testing.T) {
-	t.Run(
-		"initialize healthcheck",
-		func(t *testing.T) {
-			testHealthcheck(t, 1, []int{}, HealthcheckWindow-1)
+	cases := []struct {
+		name string
+		args args
+		want *CumulativeSlidingWindow
+	}{
+		{
+			name: "initial should be all true",
+			args: args{
+				failures: []bool{},
+			},
+			want: &CumulativeSlidingWindow{
+				size:     windowSize,
+				window:   []bool{true, true, true, true, true},
+				failures: windowSize,
+				cursor:   0,
+			},
 		},
-	)
-	t.Run(
-		"none errors",
-		func(t *testing.T) {
-			testHealthcheck(t, 2*HealthcheckWindow, []int{}, 0)
+		{
+			name: "no failures",
+			args: args{
+				failures: []bool{false, false, false, false, false, false},
+			},
+			want: &CumulativeSlidingWindow{
+				size:     windowSize,
+				window:   []bool{false, false, false, false, false},
+				failures: 0,
+				cursor:   1,
+			},
+		},
+		{
+			name: "two failure at same position",
+			args: args{
+				failures: []bool{true, false, false, false, false, true},
+			},
+			want: &CumulativeSlidingWindow{
+				size:     windowSize,
+				window:   []bool{true, false, false, false, false},
+				failures: 1,
+				cursor:   1,
+			},
+		},
+		{
+			name: "failure change to no failure",
+			args: args{
+				failures: []bool{true, false, false, false, false, false},
+			},
+			want: &CumulativeSlidingWindow{
+				size:     windowSize,
+				window:   []bool{false, false, false, false, false},
+				failures: 0,
+				cursor:   1,
+			},
+		},
+		{
+			name: "no failure change to failure",
+			args: args{
+				failures: []bool{false, false, false, false, false, true},
+			},
+			want: &CumulativeSlidingWindow{
+				size:     windowSize,
+				window:   []bool{true, false, false, false, false},
+				failures: 1,
+				cursor:   1,
+			},
+		},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			w := NewCumulativeSlidingWindow(windowSize)
+			for _, failure := range c.args.failures {
+				w.Add(failure)
+			}
+			if got := w; !reflect.DeepEqual(got, c.want) {
+				t.Errorf("CumulativeSlidingWindow.Add() = %v, want %v", *got, *c.want)
+			}
 		})
-	t.Run(
-		"one errors",
-		func(t *testing.T) {
-			testHealthcheck(t, HealthcheckWindow, []int{0}, 1)
-		})
-	t.Run(
-		"two errors at same index",
-		func(t *testing.T) {
-			testHealthcheck(t, 2*HealthcheckWindow, []int{0, HealthcheckWindow}, 1)
-		})
-	t.Run(
-		"nil to error at same index",
-		func(t *testing.T) {
-			testHealthcheck(t, 2*HealthcheckWindow, []int{HealthcheckWindow}, 1)
-		})
-	t.Run(
-		"error to nil at same index",
-		func(t *testing.T) {
-			testHealthcheck(t, 2*HealthcheckWindow, []int{0}, 0)
-		})
+	}
 }

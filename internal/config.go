@@ -11,10 +11,8 @@ type Config struct {
 	RPC        RpcConfig        `toml:"rpc"`
 	SleepTime  uint             `toml:"sleep_time"`
 
-	HealthCheckIntervalMs       int64 `toml:"health_check_interval_ms"`
-	HealthCheckWindow           int   `toml:"health_check_window"`
-	HealthCheckThreshold        int   `toml:"health_check_threshold"`
-	MaxConvergenceWaitingTimeMs int64 `toml:"max_convergence_waiting_time_ms"`
+	HealthCheck HealthCheckConfig `toml:"health_check" mapstructure:"health_check"`
+	Election    ElectionConfig    `toml:"election mapstructure:"election"`
 }
 
 type NodeConfig struct {
@@ -30,4 +28,13 @@ type MetricsConfig struct {
 type RpcConfig struct {
 	Host string `toml:"host"`
 	Port int    `toml:"port"`
+}
+
+type HealthCheckConfig struct {
+	IntervalMs            int64 `toml:"interval_ms"`
+	FailureThresholdLast5 int   `toml:"failure_threshold_last5"`
+}
+
+type ElectionConfig struct {
+	MaxWaitingTimeForConvergenceMs int64 `toml:"max_waiting_time_for_convergence_ms"`
 }
