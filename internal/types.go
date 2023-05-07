@@ -4,17 +4,17 @@ import (
 	"context"
 	"fmt"
 	"github.com/ethereum/go-ethereum/ethclient"
-	"github.com/ethereum/go-ethereum/rpc"
+	"github.com/node-real/op-coordinator/internal/client"
 )
 
 type Node struct {
 	name   string
-	opNode *rpc.Client
+	opNode *client.OpNodeClient
 	opGeth *ethclient.Client
 }
 
 func NewNode(nodeName string, opNodeUrl string, opGethUrl string) (*Node, error) {
-	opNodeClient, err := rpc.Dial(opNodeUrl)
+	opNodeClient, err := dialOpNodeClientWithTimeout(context.Background(), opNodeUrl)
 	if err != nil {
 		return nil, fmt.Errorf("dial OpNode error, nodeName: %s, OpNodeUrl: %s, error: %v", nodeName, opNodeUrl, err)
 	}

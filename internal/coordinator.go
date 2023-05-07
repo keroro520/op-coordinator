@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"github.com/ethereum-optimism/optimism/op-node/eth"
-	"github.com/ethereum/go-ethereum/common"
 	"go.uber.org/zap"
 	"sync"
 	"time"
@@ -80,8 +79,7 @@ func (c *Coordinator) revokeCurrentMaster() {
 	// Stop the sequencer by calling admin_stopSequencer
 	// It's fine even if the call fails because the leadership will be revoked anyway and the node is unable to
 	// produce blocks.
-	var hash common.Hash
-	if err := c.master.opNode.CallContext(context.Background(), &hash, "admin_stopSequencer"); err != nil {
+	if _, err := c.master.opNode.StopSequencer(context.Background()); err != nil {
 		zap.S().Errorw("Fail to call admin_stopSequencer even though its leadership will be revoked", "node", c.master.name, "error", err)
 	}
 
@@ -105,8 +103,7 @@ func (c *Coordinator) elect() {
 		return
 	}
 
-	err = canonical.opNode.CallContext(context.Background(), nil, "admin_startSequencer", canonicalStatus.UnsafeL2.Hash)
-	if err != nil {
+	if err = canonical.opNode.StartSequencer(context.Background(), canonicalStatus.UnsafeL2.Hash); err != nil {
 		zap.S().Errorw("Fail to call admin_startSequencer", "node", canonical.name, "error", err)
 		return
 	}
@@ -148,13 +145,11 @@ func (c *Coordinator) nodesConverged() bool {
 		go func(node *Node) {
 			defer wg.Done()
 
-			var syncStatus *eth.SyncStatus
-			if err := node.opNode.CallContext(context.Background(), syncStatus, "optimism_syncStatus"); err != nil {
+			if syncStatus, err := node.opNode.SyncStatus(context.Background()); err == nil {
+				resultCh <- syncStatus.UnsafeL2.Number
+			} else {
 				zap.S().Errorw("Fail to call optimism_syncStatus", "node", node.name, "error", err)
-				return
 			}
-
-			resultCh <- syncStatus.UnsafeL2.Number
 		}(node)
 	}
 	wg.Wait()
@@ -184,15 +179,15 @@ func (c *Coordinator) findCanonicalCandidate() (*Node, *eth.SyncStatus, error) {
 		}
 
 		candidate := c.nodes[nodeName]
-		var syncStatus eth.SyncStatus
-		if err := candidate.opNode.CallContext(context.Background(), &syncStatus, "optimism_syncStatus"); err != nil {
+		syncStatus, err := candidate.opNode.SyncStatus(context.Background())
+		if err != nil {
 			zap.S().Errorw("Fail to call optimism_syncStatus", "node", candidate.name, "error", candidate.name, err)
 			continue
 		}
 
 		if canonicalStatus == nil || canonicalStatus.UnsafeL2.Number < syncStatus.UnsafeL2.Number {
 			canonical = candidate
-			canonicalStatus = &syncStatus
+			canonicalStatus = syncStatus
 		}
 	}
 
@@ -205,20 +200,12 @@ func (c *Coordinator) findCanonicalCandidate() (*Node, *eth.SyncStatus, error) {
 // findExistingMaster returns the existing master if it is healthy and its admin_sequencerStopped is false
 func (c *Coordinator) findExistingMaster() *Node {
 	for nodeName := range c.config.Candidates {
-		// Filter healthy candidates
-		if !c.isCandidate(nodeName) || !c.healthChecker.IsHealthy(nodeName) {
-			continue
-		}
-
-		var sequencerStopped bool
-		candidate := c.nodes[nodeName]
-		err := candidate.opNode.CallContext(context.Background(), &sequencerStopped, "admin_sequencerStopped")
-		if err != nil {
-			continue
-		}
-
-		if sequencerStopped == false {
-			return candidate
+		if c.isCandidate(nodeName) && c.healthChecker.IsHealthy(nodeName) {
+			candidate := c.nodes[nodeName]
+			sequencerStopped, err := candidate.opNode.SequencerStopped(context.Background())
+			if err == nil && sequencerStopped == false {
+				return candidate
+			}
 		}
 	}
 

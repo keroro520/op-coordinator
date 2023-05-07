@@ -2,9 +2,8 @@ package internal
 
 import (
 	"context"
-	"github.com/ethereum-optimism/optimism/op-node/eth"
 	"github.com/ethereum/go-ethereum/ethclient"
-	"github.com/ethereum/go-ethereum/rpc"
+	"github.com/node-real/op-coordinator/internal/client"
 	"go.uber.org/zap"
 	"sync"
 	"time"
@@ -130,8 +129,7 @@ func healthcheckOpGeth(ctx context.Context, client *ethclient.Client) error {
 	return err
 }
 
-func healthcheckOpNode(ctx context.Context, client *rpc.Client) error {
-	var syncStatus eth.SyncStatus
-	err := client.CallContext(ctx, &syncStatus, "optimism_syncStatus")
+func healthcheckOpNode(ctx context.Context, client *client.OpNodeClient) error {
+	_, err := client.SyncStatus(ctx)
 	return err
 }
