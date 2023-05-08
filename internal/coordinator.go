@@ -55,6 +55,21 @@ func (c *Coordinator) Start(ctx context.Context) {
 }
 
 func (c *Coordinator) loop(ctx context.Context) {
+	emptyMasterAlert := func() {
+		ticker := time.NewTicker(5 * time.Second)
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				if c.master == "" {
+					zap.S().Warnw("Empty master", "areMajorityCandidatesHealthy", c.areMajorityCandidatesHealthy())
+				}
+			}
+		}
+	}
+	go emptyMasterAlert()
+
 	ticker := time.NewTicker(50 * time.Millisecond)
 	for {
 		select {
@@ -62,7 +77,9 @@ func (c *Coordinator) loop(ctx context.Context) {
 			return
 		case <-ticker.C:
 			if c.master == "" {
-				c.elect()
+				if c.areMajorityCandidatesHealthy() {
+					c.elect()
+				}
 				continue
 			}
 
@@ -71,6 +88,19 @@ func (c *Coordinator) loop(ctx context.Context) {
 			}
 		}
 	}
+}
+
+// areMajorityCandidatesHealthy returns true if the number of healthy candidates is greater than or equal to the
+// majority of the total number of candidates.
+func (c *Coordinator) areMajorityCandidatesHealthy() bool {
+	healthyCandidates := 0
+	for _, node := range c.nodes {
+		if c.isCandidate(node.name) && c.healthChecker.IsHealthy(node.name) {
+			healthyCandidates++
+		}
+	}
+
+	return healthyCandidates >= len(c.config.Candidates)/2+1
 }
 
 // revokeCurrentMaster revokes the leadership of the current master.
