@@ -10,19 +10,19 @@ op_node_public_rpc_url = 'http://127.0.0.1:8545'
 op_node_p2p_rpc_url = 'http://127.0.0.1:8545'
 op_geth_public_rpc_url = 'http://127.0.0.1:8545'
 
-[candidators]
+[candidates]
 
-[candidators.candidators-1]
+[candidates.candidates-1]
 op_node_public_rpc_url = 'http://127.0.0.1:8545'
 op_node_p2p_rpc_url = 'http://127.0.0.1:8545'
 op_geth_public_rpc_url = 'http://127.0.0.1:8545'
 
-[candidators.candidators-2]
+[candidates.candidates-2]
 op_node_public_rpc_url = 'http://127.0.0.1:8545'
 op_node_p2p_rpc_url = 'http://127.0.0.1:8545'
 op_geth_public_rpc_url = 'http://127.0.0.1:8545'
 
-[candidators.candidators-3]
+[candidates.candidates-3]
 op_node_public_rpc_url = 'http://127.0.0.1:8545'
 op_node_p2p_rpc_url = 'http://127.0.0.1:8545'
 op_geth_public_rpc_url = 'http://127.0.0.1:8545'
