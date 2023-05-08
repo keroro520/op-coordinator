@@ -12,7 +12,7 @@ import (
 type Coordinator struct {
 	config Config
 
-	master *Node
+	master string
 	nodes  map[string]*Node
 
 	healthChecker *HealthChecker
@@ -60,12 +60,12 @@ func (c *Coordinator) loop(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			if c.master == nil {
+			if c.master == "" {
 				c.elect()
 				continue
 			}
 
-			if !c.healthChecker.IsHealthy(c.master.name) {
+			if !c.healthChecker.IsHealthy(c.master) {
 				c.revokeCurrentMaster()
 			}
 		}
@@ -74,22 +74,23 @@ func (c *Coordinator) loop(ctx context.Context) {
 
 // revokeCurrentMaster revokes the leadership of the current master.
 func (c *Coordinator) revokeCurrentMaster() {
-	zap.S().Warnf("Revoke unhealthy master %s", c.master.name)
+	zap.S().Warnf("Revoke unhealthy master %s", c.master)
 
 	// Stop the sequencer by calling admin_stopSequencer
 	// It's fine even if the call fails because the leadership will be revoked anyway and the node is unable to
 	// produce blocks.
-	if _, err := c.master.opNode.StopSequencer(context.Background()); err != nil {
-		zap.S().Errorw("Fail to call admin_stopSequencer even though its leadership will be revoked", "node", c.master.name, "error", err)
+	client := c.nodes[c.master]
+	if _, err := client.opNode.StopSequencer(context.Background()); err != nil {
+		zap.S().Errorw("Fail to call admin_stopSequencer even though its leadership will be revoked", "node", c.master, "error", err)
 	}
 
-	c.master = nil
+	c.master = ""
 }
 
 func (c *Coordinator) elect() {
 	zap.S().Info("Start election")
 	if existingMaster := c.findExistingMaster(); existingMaster != nil {
-		c.master = existingMaster
+		c.master = existingMaster.name
 		return
 	}
 
@@ -108,8 +109,8 @@ func (c *Coordinator) elect() {
 		return
 	}
 
-	c.master = canonical
-	zap.S().Infow("Success to elect new master", "node", canonical.name, "unsafe_l2", canonicalStatus.UnsafeL2)
+	c.master = canonical.name
+	zap.S().Infow("Success to elect new master", "node", c.master, "unsafe_l2", canonicalStatus.UnsafeL2)
 }
 
 func (c *Coordinator) waitForConvergence(ctx context.Context) bool {
