@@ -4,7 +4,7 @@ type BridgesConfig map[string]*NodeConfig
 type CandidatesConfig map[string]*NodeConfig
 
 type Config struct {
-	Candidates CandidatesConfig `toml:"nodes" mapstructure:"nodes"`
+	Candidates CandidatesConfig `toml:"candidates" mapstructure:"candidates"`
 	Bridges    BridgesConfig    `toml:"bridges" mapstructure:"bridges"`
 	LogLevel   string           `toml:"log_level" mapstructure:"log_level"`
 	Metrics    MetricsConfig    `toml:"metrics"`

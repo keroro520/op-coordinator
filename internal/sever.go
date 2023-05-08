@@ -93,8 +93,11 @@ func (n *nodeAPI) Master(nodeName string) (bool, error) {
 		return true, nil
 	}
 	go func() {
-		if _, err := n.coordinator.nodes[nodeName].opNode.StopSequencer(context.Background()); err != nil {
-			zap.S().Errorw("Fail to call admin_stopSequencer", "node", nodeName, "error", err)
+		node := n.coordinator.nodes[nodeName]
+		if node != nil && node.opNode != nil {
+			if _, err := node.opNode.StopSequencer(context.Background()); err != nil {
+				zap.S().Errorw("Fail to call admin_stopSequencer", "node", nodeName, "error", err)
+			}
 		}
 	}()
 	return false, nil
