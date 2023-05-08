@@ -52,7 +52,13 @@ func startHandleFunc(cmd *cobra.Command, args []string) error {
 	}
 
 	// TODO context and signal
-	coordinator.Start(context.Background())
+	go coordinator.Start(context.Background())
+	server, err := internal.NewRPCServer(config.RPC, "v1.0", coordinator)
+	if err != nil {
+		zap.S().Error("Fail to start rpc server, error: %+v", err)
+		panic(err)
+	}
+	server.Start()
 	return nil
 }
 

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"github.com/ethereum/go-ethereum/node"
 	"github.com/ethereum/go-ethereum/rpc"
+	"go.uber.org/zap"
 	"net"
 	"net/http"
 	"strconv"
@@ -30,8 +31,8 @@ type rpcServer struct {
 	listenAddr net.Addr
 }
 
-func NewRPCServer(ctx context.Context, rpcCfg RpcConfig, appVersion string) (*rpcServer, error) {
-	api := NewNodeAPI(appVersion)
+func NewRPCServer(rpcCfg RpcConfig, appVersion string, c *Coordinator) (*rpcServer, error) {
+	api := NewNodeAPI(appVersion, c)
 	endpoint := net.JoinHostPort(rpcCfg.Host, strconv.Itoa(rpcCfg.Port))
 	r := &rpcServer{
 		endpoint: endpoint,
@@ -75,13 +76,26 @@ func healthzHandler(appVersion string) http.HandlerFunc {
 }
 
 type nodeAPI struct {
-	version string
+	version     string
+	coordinator *Coordinator
 }
 
-func NewNodeAPI(version string) *nodeAPI {
-	return &nodeAPI{version: version}
+func NewNodeAPI(version string, c *Coordinator) *nodeAPI {
+	return &nodeAPI{version: version, coordinator: c}
 }
 
-func (nodeAPI *nodeAPI) Version(ctx context.Context) (string, error) {
-	return nodeAPI.version, nil
+func (n *nodeAPI) Version() (string, error) {
+	return n.version, nil
+}
+
+func (n *nodeAPI) Master(nodeName string) (bool, error) {
+	if nodeName == n.coordinator.master {
+		return true, nil
+	}
+	go func() {
+		if _, err := n.coordinator.nodes[nodeName].opNode.StopSequencer(context.Background()); err != nil {
+			zap.S().Errorw("Fail to call admin_stopSequencer", "node", nodeName, "error", err)
+		}
+	}()
+	return false, nil
 }
