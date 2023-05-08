@@ -49,6 +49,8 @@ func NewCoordinator(config Config) (*Coordinator, error) {
 }
 
 func (c *Coordinator) Start(ctx context.Context) {
+	go c.healthChecker.Start(ctx, &c.nodes)
+
 	zap.S().Info("Coordinator start")
 	c.loop(ctx)
 	zap.S().Info("Coordinator exit")

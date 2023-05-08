@@ -3,12 +3,13 @@ package internal
 import (
 	"context"
 	"errors"
-	"github.com/ethereum/go-ethereum/node"
-	"github.com/ethereum/go-ethereum/rpc"
-	"go.uber.org/zap"
 	"net"
 	"net/http"
 	"strconv"
+
+	"github.com/ethereum/go-ethereum/node"
+	"github.com/ethereum/go-ethereum/rpc"
+	"go.uber.org/zap"
 )
 
 var timeouts = rpc.DefaultHTTPTimeouts
@@ -89,17 +90,23 @@ func (n *nodeAPI) Version() (string, error) {
 }
 
 func (n *nodeAPI) RequestBuildingBlock(nodeName string) (bool, error) {
+	if n.coordinator.master == "" {
+		return false, nil
+	}
 	if nodeName == n.coordinator.master {
 		return true, nil
 	}
 	go func() {
+		zap.S().Warnw("Invalid master is requesting!", "master", n.coordinator.master, "node", nodeName)
+
 		node := n.coordinator.nodes[nodeName]
 		if node != nil && node.opNode != nil {
 			blockHash, err := node.opNode.StopSequencer(context.Background())
 			if err != nil {
 				zap.S().Errorw("Fail to call admin_stopSequencer", "node", nodeName, "error", err)
+			} else {
+				zap.S().Infow("Success to call admin_stopSequencer", "blockHash", blockHash.String())
 			}
-			zap.S().Infow("Success to call admin_stopSequencer", "blockHash", blockHash.String())
 		}
 	}()
 	return false, nil
