@@ -37,7 +37,7 @@ func NewRPCServer(rpcCfg RpcConfig, appVersion string, c *Coordinator) (*rpcServ
 	r := &rpcServer{
 		endpoint: endpoint,
 		apis: []rpc.API{{
-			Namespace:     "optimism",
+			Namespace:     "coordinator",
 			Service:       api,
 			Public:        true,
 			Authenticated: false,
@@ -88,16 +88,18 @@ func (n *nodeAPI) Version() (string, error) {
 	return n.version, nil
 }
 
-func (n *nodeAPI) Master(nodeName string) (bool, error) {
+func (n *nodeAPI) RequestBuildingBlock(nodeName string) (bool, error) {
 	if nodeName == n.coordinator.master {
 		return true, nil
 	}
 	go func() {
 		node := n.coordinator.nodes[nodeName]
 		if node != nil && node.opNode != nil {
-			if _, err := node.opNode.StopSequencer(context.Background()); err != nil {
+			blockHash, err := node.opNode.StopSequencer(context.Background())
+			if err != nil {
 				zap.S().Errorw("Fail to call admin_stopSequencer", "node", nodeName, "error", err)
 			}
+			zap.S().Infow("Success to call admin_stopSequencer", "blockHash", blockHash.String())
 		}
 	}()
 	return false, nil

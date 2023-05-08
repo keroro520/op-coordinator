@@ -27,6 +27,7 @@ func NewCoordinator(config Config) (*Coordinator, error) {
 			time.Duration(config.HealthCheck.IntervalMs)*time.Millisecond,
 			config.HealthCheck.FailureThresholdLast5,
 		),
+		nodes: make(map[string]*Node),
 	}
 
 	// Create clients for nodes
