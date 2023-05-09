@@ -2,6 +2,7 @@ package internal
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"github.com/ethereum-optimism/optimism/op-node/eth"
 	"go.uber.org/zap"
@@ -16,18 +17,19 @@ type Coordinator struct {
 	nodes  map[string]*Node
 
 	healthChecker *HealthChecker
-}
 
-var ErrNoHealthyCandidates = fmt.Errorf("no healthy candidates")
+	adminCh chan AdminCommand
+}
 
 func NewCoordinator(config Config) (*Coordinator, error) {
 	c := Coordinator{
 		config: config,
+		nodes:  make(map[string]*Node),
 		healthChecker: NewHealthChecker(
 			time.Duration(config.HealthCheck.IntervalMs)*time.Millisecond,
 			config.HealthCheck.FailureThresholdLast5,
 		),
-		nodes: make(map[string]*Node),
+		adminCh: make(chan AdminCommand),
 	}
 
 	// Create clients for nodes
@@ -56,6 +58,10 @@ func (c *Coordinator) Start(ctx context.Context) {
 	zap.S().Info("Coordinator exit")
 }
 
+func (c *Coordinator) AdminCh() chan AdminCommand {
+	return c.adminCh
+}
+
 func (c *Coordinator) loop(ctx context.Context) {
 	lastMasterCheck := time.Now()
 	ticker := time.NewTicker(50 * time.Millisecond)
@@ -66,7 +72,9 @@ func (c *Coordinator) loop(ctx context.Context) {
 		case <-ticker.C:
 			if c.master == "" {
 				if c.hasSufficientHealthyNodes() {
-					c.elect()
+					if err := c.elect(); err != nil {
+						zap.S().Errorw("Fail to elect master", "error", err)
+					}
 				}
 				continue
 			}
@@ -87,6 +95,8 @@ func (c *Coordinator) loop(ctx context.Context) {
 					lastMasterCheck = time.Now()
 				}
 			}
+		case cmd := <-c.adminCh:
+			cmd.Execute(c)
 		}
 	}
 }
@@ -105,7 +115,11 @@ func (c *Coordinator) hasSufficientHealthyNodes() bool {
 
 // revokeCurrentMaster revokes the leadership of the current master.
 func (c *Coordinator) revokeCurrentMaster() {
-	zap.S().Warnf("Revoke unhealthy master %s", c.master)
+	if c.master == "" {
+		return
+	}
+
+	zap.S().Warnf("Revoke master %s", c.master)
 
 	// Stop the sequencer by calling admin_stopSequencer
 	// It's fine even if the call fails because the leadership will be revoked anyway and the node is unable to
@@ -118,30 +132,46 @@ func (c *Coordinator) revokeCurrentMaster() {
 	c.master = ""
 }
 
-func (c *Coordinator) elect() {
+func (c *Coordinator) elect() error {
 	zap.S().Info("Start election")
 	if existingMaster := c.findExistingMaster(); existingMaster != nil {
 		c.master = existingMaster.name
-		return
+		return nil
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(c.config.Election.MaxWaitingTimeForConvergenceMs)*time.Millisecond)
 	defer cancel()
 	_ = c.waitForConvergence(ctx)
 
-	canonical, canonicalStatus, err := c.findCanonicalCandidate()
+	canonical, err := c.findCanonicalCandidate()
 	if canonical == nil {
-		zap.S().Errorw("Fail to find canonical candidate", "error", err)
-		return
+		return fmt.Errorf("fail to find canonical candidate, error: %s", err)
+	}
+
+	return c.setMaster(canonical.name)
+}
+
+func (c *Coordinator) setMaster(nodeName string) error {
+	if !c.isCandidate(nodeName) {
+		return errors.New("node is not a candidate")
+	}
+	if c.master == nodeName {
+		return errors.New("node is already the master")
+	}
+
+	canonical := c.nodes[nodeName]
+	canonicalStatus, err := canonical.opNode.SyncStatus(context.Background())
+	if err != nil {
+		return fmt.Errorf("fail to call optimism_syncStatus, node: %s, error: %s", canonical.name, err)
 	}
 
 	if err = canonical.opNode.StartSequencer(context.Background(), canonicalStatus.UnsafeL2.Hash); err != nil {
-		zap.S().Errorw("Fail to call admin_startSequencer", "node", canonical.name, "error", err)
-		return
+		return fmt.Errorf("fail to call admin_startSequencer, node: %s, error: %s", canonical.name, err)
 	}
 
-	c.master = canonical.name
+	c.master = nodeName
 	zap.S().Infow("Success to elect new master", "node", c.master, "unsafe_l2", canonicalStatus.UnsafeL2)
+	return nil
 }
 
 func (c *Coordinator) waitForConvergence(ctx context.Context) bool {
@@ -204,7 +234,7 @@ func (c *Coordinator) isCandidate(nodeName string) bool {
 }
 
 // findCanonicalCandidate finds the candidate with the highest unsafe_l2 height
-func (c *Coordinator) findCanonicalCandidate() (*Node, *eth.SyncStatus, error) {
+func (c *Coordinator) findCanonicalCandidate() (*Node, error) {
 	var canonical *Node
 	var canonicalStatus *eth.SyncStatus
 	for nodeName := range c.config.Candidates {
@@ -227,9 +257,9 @@ func (c *Coordinator) findCanonicalCandidate() (*Node, *eth.SyncStatus, error) {
 	}
 
 	if canonical == nil {
-		return nil, nil, ErrNoHealthyCandidates
+		return nil, errors.New("no healthy candidates")
 	}
-	return canonical, canonicalStatus, nil
+	return canonical, nil
 }
 
 // findExistingMaster returns the existing master if its admin_sequencerStopped is false.
