@@ -3,6 +3,7 @@ package internal
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net"
 	"net/http"
 	"strconv"
@@ -89,25 +90,26 @@ func (n *nodeAPI) Version() (string, error) {
 	return n.version, nil
 }
 
-func (n *nodeAPI) RequestBuildingBlock(nodeName string) (bool, error) {
+func (n *nodeAPI) RequestBuildingBlock(nodeName string) error {
 	if n.coordinator.master == "" {
-		return false, nil
+		return fmt.Errorf("empty master")
 	}
-	if nodeName == n.coordinator.master {
-		return true, nil
-	}
-	go func() {
-		zap.S().Warnw("Invalid master is requesting!", "master", n.coordinator.master, "node", nodeName)
+	if n.coordinator.master != nodeName {
+		go func() {
+			zap.S().Warnw("Invalid master is requesting!", "master", n.coordinator.master, "node", nodeName)
 
-		node := n.coordinator.nodes[nodeName]
-		if node != nil && node.opNode != nil {
-			blockHash, err := node.opNode.StopSequencer(context.Background())
-			if err != nil {
-				zap.S().Errorw("Fail to call admin_stopSequencer", "node", nodeName, "error", err)
-			} else {
-				zap.S().Infow("Success to call admin_stopSequencer", "blockHash", blockHash.String())
+			node := n.coordinator.nodes[nodeName]
+			if node != nil && node.opNode != nil {
+				blockHash, err := node.opNode.StopSequencer(context.Background())
+				if err != nil {
+					zap.S().Errorw("Fail to call admin_stopSequencer", "node", nodeName, "error", err)
+				} else {
+					zap.S().Infow("Success to call admin_stopSequencer", "blockHash", blockHash.String())
+				}
 			}
-		}
-	}()
-	return false, nil
+		}()
+		return fmt.Errorf("unknown master")
+	}
+
+	return nil
 }

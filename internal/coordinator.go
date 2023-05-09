@@ -194,6 +194,9 @@ func (c *Coordinator) nodesConverged() bool {
 		} else if convergence != unsafeL2 {
 			return false
 		}
+		if len(resultCh) == 0 {
+			break
+		}
 	}
 	return true
 }
