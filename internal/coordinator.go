@@ -240,16 +240,28 @@ func (c *Coordinator) findCanonicalCandidate() (*Node, *eth.SyncStatus, error) {
 //   - If the existing master is unhealthy, it will be revoked by the health checker when it detects the master is
 //     unhealthy and be called admin_stopSequencer. Then, we will re-elect a new master.
 func (c *Coordinator) findExistingMaster() *Node {
+	var found *Node
+	var foundUnsafeL2 = uint64(0)
 	for nodeName := range c.config.Candidates {
 		if c.isCandidate(nodeName) {
 			candidate := c.nodes[nodeName]
 			sequencerStopped, err := candidate.opNode.SequencerStopped(context.Background())
 			if err == nil && sequencerStopped == false {
 				zap.S().Infow("Found existing master", "node", nodeName)
-				return candidate
+
+				syncStatus, err := candidate.opNode.SyncStatus(context.Background())
+				if err != nil {
+					zap.S().Errorw("Fail to call optimism_syncStatus", "node", candidate.name, "error", err)
+					continue
+				}
+
+				if foundUnsafeL2 < syncStatus.UnsafeL2.Number {
+					found = candidate
+					foundUnsafeL2 = syncStatus.UnsafeL2.Number
+				}
 			}
 		}
 	}
 
-	return nil
+	return found
 }
