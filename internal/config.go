@@ -12,7 +12,7 @@ type Config struct {
 	SleepTime  uint             `toml:"sleep_time"`
 
 	HealthCheck HealthCheckConfig `toml:"health_check" mapstructure:"health_check"`
-	Election    ElectionConfig    `toml:"election mapstructure:"election"`
+	Election    ElectionConfig    `toml:"election" mapstructure:"election"`
 }
 
 type NodeConfig struct {
@@ -31,10 +31,10 @@ type RpcConfig struct {
 }
 
 type HealthCheckConfig struct {
-	IntervalMs            int64 `toml:"interval_ms"`
-	FailureThresholdLast5 int   `toml:"failure_threshold_last5"`
+	IntervalMs            int64 `toml:"interval_ms" mapstructure:"interval_ms"`
+	FailureThresholdLast5 int   `toml:"failure_threshold_last5" mapstructure:"failure_threshold_last5"`
 }
 
 type ElectionConfig struct {
-	MaxWaitingTimeForConvergenceMs int64 `toml:"max_waiting_time_for_convergence_ms"`
+	MaxWaitingTimeForConvergenceMs int64 `toml:"max_waiting_time_for_convergence_ms" mapstructure:"max_waiting_time_for_convergence_ms"`
 }
