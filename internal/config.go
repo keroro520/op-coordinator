@@ -1,5 +1,9 @@
 package internal
 
+import (
+	"errors"
+)
+
 type BridgesConfig map[string]*NodeConfig
 type CandidatesConfig map[string]*NodeConfig
 
@@ -37,4 +41,22 @@ type HealthCheckConfig struct {
 
 type ElectionConfig struct {
 	MaxWaitingTimeForConvergenceMs int64 `toml:"max_waiting_time_for_convergence_ms" mapstructure:"max_waiting_time_for_convergence_ms"`
+	MinRequiredHealthyNodes        int   `toml:"min_required_healthy_nodes" mapstructure:"min_required_healthy_nodes"`
+}
+
+func (cfg *Config) Check() error {
+	// Check HealthCheckConfig
+	if cfg.HealthCheck.FailureThresholdLast5 >= 5 {
+		return errors.New("failure_threshold_last5 must be less than 5")
+	}
+
+	// Check ElectionConfig
+	if cfg.Election.MinRequiredHealthyNodes <= 0 {
+		return errors.New("min_required_healthy_nodes must be greater than 0")
+	}
+	if cfg.Election.MinRequiredHealthyNodes > len(cfg.Candidates)+len(cfg.Bridges) {
+		return errors.New("min_required_healthy_nodes must be less than or equal to the number of candidates and bridges")
+	}
+
+	return nil
 }

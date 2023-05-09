@@ -65,7 +65,7 @@ func (c *Coordinator) loop(ctx context.Context) {
 			return
 		case <-ticker.C:
 			if c.master == "" {
-				if c.areMajorityCandidatesHealthy() {
+				if c.hasSufficientHealthyNodes() {
 					c.elect()
 				}
 				continue
@@ -76,7 +76,7 @@ func (c *Coordinator) loop(ctx context.Context) {
 			} else {
 				if lastMasterCheck.Add(5 * time.Second).Before(time.Now()) {
 					if c.master == "" {
-						zap.S().Warnw("Empty master", "areMajorityCandidatesHealthy", c.areMajorityCandidatesHealthy())
+						zap.S().Warnw("Empty master", "hasSufficientHealthyNodes", c.hasSufficientHealthyNodes())
 					}
 
 					if stopped, err := c.nodes[c.master].opNode.SequencerStopped(ctx); err == nil && stopped {
@@ -91,17 +91,16 @@ func (c *Coordinator) loop(ctx context.Context) {
 	}
 }
 
-// areMajorityCandidatesHealthy returns true if the number of healthy candidates is greater than or equal to the
-// majority of the total number of candidates.
-func (c *Coordinator) areMajorityCandidatesHealthy() bool {
+// hasSufficientHealthyNodes checks if there are sufficient healthy nodes to elect a new master.
+func (c *Coordinator) hasSufficientHealthyNodes() bool {
 	healthyCandidates := 0
 	for _, node := range c.nodes {
-		if c.isCandidate(node.name) && c.healthChecker.IsHealthy(node.name) {
+		if /* c.isCandidate(node.name) && */ c.healthChecker.IsHealthy(node.name) {
 			healthyCandidates++
 		}
 	}
 
-	return healthyCandidates >= len(c.config.Candidates)/2+1
+	return healthyCandidates >= c.config.Election.MinRequiredHealthyNodes
 }
 
 // revokeCurrentMaster revokes the leadership of the current master.
