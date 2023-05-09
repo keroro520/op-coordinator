@@ -3,12 +3,14 @@ package internal
 import (
 	"context"
 	"errors"
-	"github.com/ethereum/go-ethereum/node"
-	"github.com/ethereum/go-ethereum/rpc"
-	"go.uber.org/zap"
+	"fmt"
 	"net"
 	"net/http"
 	"strconv"
+
+	"github.com/ethereum/go-ethereum/node"
+	"github.com/ethereum/go-ethereum/rpc"
+	"go.uber.org/zap"
 )
 
 var timeouts = rpc.DefaultHTTPTimeouts
@@ -88,19 +90,26 @@ func (n *nodeAPI) Version() (string, error) {
 	return n.version, nil
 }
 
-func (n *nodeAPI) RequestBuildingBlock(nodeName string) (bool, error) {
-	if nodeName == n.coordinator.master {
-		return true, nil
+func (n *nodeAPI) RequestBuildingBlock(nodeName string) error {
+	if n.coordinator.master == "" {
+		return fmt.Errorf("empty master")
 	}
-	go func() {
-		node := n.coordinator.nodes[nodeName]
-		if node != nil && node.opNode != nil {
-			blockHash, err := node.opNode.StopSequencer(context.Background())
-			if err != nil {
-				zap.S().Errorw("Fail to call admin_stopSequencer", "node", nodeName, "error", err)
+	if n.coordinator.master != nodeName {
+		go func() {
+			zap.S().Warnw("Invalid master is requesting!", "master", n.coordinator.master, "node", nodeName)
+
+			node := n.coordinator.nodes[nodeName]
+			if node != nil && node.opNode != nil {
+				blockHash, err := node.opNode.StopSequencer(context.Background())
+				if err != nil {
+					zap.S().Errorw("Fail to call admin_stopSequencer", "node", nodeName, "error", err)
+				} else {
+					zap.S().Infow("Success to call admin_stopSequencer", "blockHash", blockHash.String())
+				}
 			}
-			zap.S().Infow("Success to call admin_stopSequencer", "blockHash", blockHash.String())
-		}
-	}()
-	return false, nil
+		}()
+		return fmt.Errorf("unknown master")
+	}
+
+	return nil
 }

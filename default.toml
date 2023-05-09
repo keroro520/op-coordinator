@@ -33,3 +33,10 @@ port = 9761
 [rpc]
 host = "0.0.0.0"
 port = 9762
+
+[health_check]
+failure_threshold_last5 = 2
+interval_ms = 1000
+
+[election]
+max_waiting_time_for_convergence_ms = 2000

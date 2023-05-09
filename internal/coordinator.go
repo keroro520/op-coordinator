@@ -49,27 +49,15 @@ func NewCoordinator(config Config) (*Coordinator, error) {
 }
 
 func (c *Coordinator) Start(ctx context.Context) {
+	go c.healthChecker.Start(ctx, &c.nodes)
+
 	zap.S().Info("Coordinator start")
 	c.loop(ctx)
 	zap.S().Info("Coordinator exit")
 }
 
 func (c *Coordinator) loop(ctx context.Context) {
-	emptyMasterAlert := func() {
-		ticker := time.NewTicker(5 * time.Second)
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case <-ticker.C:
-				if c.master == "" {
-					zap.S().Warnw("Empty master", "areMajorityCandidatesHealthy", c.areMajorityCandidatesHealthy())
-				}
-			}
-		}
-	}
-	go emptyMasterAlert()
-
+	lastMasterCheck := time.Now()
 	ticker := time.NewTicker(50 * time.Millisecond)
 	for {
 		select {
@@ -85,6 +73,19 @@ func (c *Coordinator) loop(ctx context.Context) {
 
 			if !c.healthChecker.IsHealthy(c.master) {
 				c.revokeCurrentMaster()
+			} else {
+				if lastMasterCheck.Add(5 * time.Second).Before(time.Now()) {
+					if c.master == "" {
+						zap.S().Warnw("Empty master", "areMajorityCandidatesHealthy", c.areMajorityCandidatesHealthy())
+					}
+
+					if stopped, err := c.nodes[c.master].opNode.SequencerStopped(ctx); err == nil && stopped {
+						// In the case that the master node has been restarted, its op-node will lose the leadership. Then
+						// we have to detect this case and revoke the master.
+						c.revokeCurrentMaster()
+					}
+					lastMasterCheck = time.Now()
+				}
 			}
 		}
 	}
@@ -192,6 +193,9 @@ func (c *Coordinator) nodesConverged() bool {
 		} else if convergence != unsafeL2 {
 			return false
 		}
+		if len(resultCh) == 0 {
+			break
+		}
 	}
 	return true
 }
@@ -229,17 +233,35 @@ func (c *Coordinator) findCanonicalCandidate() (*Node, *eth.SyncStatus, error) {
 	return canonical, canonicalStatus, nil
 }
 
-// findExistingMaster returns the existing master if it is healthy and its admin_sequencerStopped is false
+// findExistingMaster returns the existing master if its admin_sequencerStopped is false.
+//
+// Note that this function does not check if the existing master is healthy or not. Here are considerations:
+//   - If the existing master is healthy, it is okay for us to re-elect it as the master.
+//   - If the existing master is unhealthy, it will be revoked by the health checker when it detects the master is
+//     unhealthy and be called admin_stopSequencer. Then, we will re-elect a new master.
 func (c *Coordinator) findExistingMaster() *Node {
+	var found *Node
+	var foundUnsafeL2 = uint64(0)
 	for nodeName := range c.config.Candidates {
-		if c.isCandidate(nodeName) && c.healthChecker.IsHealthy(nodeName) {
+		if c.isCandidate(nodeName) {
 			candidate := c.nodes[nodeName]
 			sequencerStopped, err := candidate.opNode.SequencerStopped(context.Background())
 			if err == nil && sequencerStopped == false {
-				return candidate
+				zap.S().Infow("Found existing master", "node", nodeName)
+
+				syncStatus, err := candidate.opNode.SyncStatus(context.Background())
+				if err != nil {
+					zap.S().Errorw("Fail to call optimism_syncStatus", "node", candidate.name, "error", err)
+					continue
+				}
+
+				if foundUnsafeL2 < syncStatus.UnsafeL2.Number {
+					found = candidate
+					foundUnsafeL2 = syncStatus.UnsafeL2.Number
+				}
 			}
 		}
 	}
 
-	return nil
+	return found
 }

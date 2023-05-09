@@ -125,7 +125,7 @@ func (w *CumulativeSlidingWindow) Add(failure bool) {
 }
 
 func healthcheckOpGeth(ctx context.Context, client *ethclient.Client) error {
-	_, err := client.BlockByNumber(ctx, nil)
+	_, err := client.HeaderByNumber(ctx, nil)
 	return err
 }
 
