@@ -7,6 +7,7 @@ import (
 	"net"
 	"net/http"
 	"strconv"
+	"time"
 
 	"github.com/ethereum/go-ethereum/node"
 	"github.com/ethereum/go-ethereum/rpc"
@@ -112,4 +113,26 @@ func (n *nodeAPI) RequestBuildingBlock(nodeName string) error {
 	}
 
 	return nil
+}
+
+func (n *nodeAPI) GetMaster() string {
+	return n.coordinator.master
+}
+
+func (n *nodeAPI) SetMaster(nodeName string) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	return executeAdminCommand(ctx, n.coordinator, NewSetMasterCommand(nodeName))
+}
+
+func executeAdminCommand(ctx context.Context, coordinator *Coordinator, cmd AdminCommand) error {
+	coordinator.AdminCh() <- cmd
+
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case err := <-cmd.RespCh():
+		return err
+	}
 }
