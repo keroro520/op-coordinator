@@ -57,21 +57,7 @@ func (c *Coordinator) Start(ctx context.Context) {
 }
 
 func (c *Coordinator) loop(ctx context.Context) {
-	emptyMasterAlert := func() {
-		ticker := time.NewTicker(5 * time.Second)
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case <-ticker.C:
-				if c.master == "" {
-					zap.S().Warnw("Empty master", "areMajorityCandidatesHealthy", c.areMajorityCandidatesHealthy())
-				}
-			}
-		}
-	}
-	go emptyMasterAlert()
-
+	lastMasterCheck := time.Now()
 	ticker := time.NewTicker(50 * time.Millisecond)
 	for {
 		select {
@@ -87,6 +73,19 @@ func (c *Coordinator) loop(ctx context.Context) {
 
 			if !c.healthChecker.IsHealthy(c.master) {
 				c.revokeCurrentMaster()
+			} else {
+				if lastMasterCheck.Add(5 * time.Second).Before(time.Now()) {
+					if c.master == "" {
+						zap.S().Warnw("Empty master", "areMajorityCandidatesHealthy", c.areMajorityCandidatesHealthy())
+					}
+
+					if stopped, err := c.nodes[c.master].opNode.SequencerStopped(ctx); err == nil && stopped {
+						// In the case that the master node has been restarted, its op-node will lose the leadership. Then
+						// we have to detect this case and revoke the master.
+						c.revokeCurrentMaster()
+					}
+					lastMasterCheck = time.Now()
+				}
 			}
 		}
 	}
