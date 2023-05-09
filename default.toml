@@ -40,3 +40,4 @@ interval_ms = 1000
 
 [election]
 max_waiting_time_for_convergence_ms = 2000
+min_required_healthy_nodes = 1

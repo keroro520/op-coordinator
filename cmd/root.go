@@ -94,6 +94,9 @@ func initConfig() {
 		os.Exit(1)
 	}
 	fmt.Printf("config file: %#v\n", config)
+	if err = config.Check(); err != nil {
+		panic(fmt.Errorf("invalid config: %s", err))
+	}
 
 	err = createLogger()
 	if err != nil {
