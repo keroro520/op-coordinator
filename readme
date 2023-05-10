@@ -1,0 +1,17 @@
+
+
+cmd
+    start --config=default.toml
+
+mintor
+    http://127.0.0.1:9761/metrics
+entrance
+    internal/coordinator.go#L12
+
+rpc
+    curl http://127.0.0.1:9762/ \
+      -X POST \
+      -H "Content-Type: application/json" \
+      --data '{"method":"optimism_version","params":[],"id":1,"jsonrpc":"2.0"}'
+
+    {"jsonrpc":"2.0","id":1,"result":"v1.0"}

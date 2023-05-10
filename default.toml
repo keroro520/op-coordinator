@@ -1,0 +1,43 @@
+[bridges]
+
+[bridges.bridge-1]
+op_node_public_rpc_url = 'http://127.0.0.1:8545'
+op_node_p2p_rpc_url = 'http://127.0.0.1:8545'
+op_geth_public_rpc_url = 'http://127.0.0.1:8545'
+
+[bridges.bridge-2]
+op_node_public_rpc_url = 'http://127.0.0.1:8545'
+op_node_p2p_rpc_url = 'http://127.0.0.1:8545'
+op_geth_public_rpc_url = 'http://127.0.0.1:8545'
+
+[candidates]
+
+[candidates.candidates-1]
+op_node_public_rpc_url = 'http://127.0.0.1:8545'
+op_node_p2p_rpc_url = 'http://127.0.0.1:8545'
+op_geth_public_rpc_url = 'http://127.0.0.1:8545'
+
+[candidates.candidates-2]
+op_node_public_rpc_url = 'http://127.0.0.1:8545'
+op_node_p2p_rpc_url = 'http://127.0.0.1:8545'
+op_geth_public_rpc_url = 'http://127.0.0.1:8545'
+
+[candidates.candidates-3]
+op_node_public_rpc_url = 'http://127.0.0.1:8545'
+op_node_p2p_rpc_url = 'http://127.0.0.1:8545'
+op_geth_public_rpc_url = 'http://127.0.0.1:8545'
+
+[metrics]
+host = "0.0.0.0"
+port = 9761
+[rpc]
+host = "0.0.0.0"
+port = 9762
+
+[health_check]
+failure_threshold_last5 = 2
+interval_ms = 1000
+
+[election]
+max_waiting_time_for_convergence_ms = 2000
+min_required_healthy_nodes = 1
