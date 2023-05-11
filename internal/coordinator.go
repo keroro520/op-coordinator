@@ -82,16 +82,19 @@ func (c *Coordinator) loop(ctx context.Context) {
 			if !c.healthChecker.IsHealthy(c.master) {
 				c.revokeCurrentMaster()
 			} else {
-				if lastMasterCheck.Add(5 * time.Second).Before(time.Now()) {
+				if lastMasterCheck.Add(3 * time.Second).Before(time.Now()) {
 					if c.master == "" {
 						zap.S().Warnw("Empty master", "hasSufficientHealthyNodes", c.hasSufficientHealthyNodes())
 					}
 
 					if stopped, err := c.nodes[c.master].opNode.SequencerStopped(ctx); err == nil && stopped {
-						// In the case that the master node has been restarted, its op-node will lose the leadership. Then
-						// we have to detect this case and revoke the master.
-						c.revokeCurrentMaster()
+						// In the case that the master node has been restarted, it loses `SequencerStopped=false` state,
+						// so we have to set `SequencerStopped=false` to reuse it as master.
+						previous := c.master
+						c.master = ""
+						c.setMaster(previous)
 					}
+
 					lastMasterCheck = time.Now()
 				}
 			}
