@@ -1,6 +1,10 @@
 package internal
 
-import "errors"
+import (
+	"context"
+	"errors"
+	"time"
+)
 
 // AdminCommand is the interface for admin commands. Admin commands come from HTTP API and are executed by
 // Coordinator synchronously.
@@ -31,6 +35,10 @@ func (cmd SetMasterCommand) Execute(coordinator *Coordinator) {
 		cmd.RespCh() <- errors.New("node is already the master")
 		return
 	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(coordinator.config.Election.MaxWaitingTimeForConvergenceMs)*time.Millisecond)
+	defer cancel()
+	_ = coordinator.waitForConvergence(ctx)
 
 	coordinator.revokeCurrentMaster()
 	cmd.RespCh() <- coordinator.setMaster(cmd.nodeName)
