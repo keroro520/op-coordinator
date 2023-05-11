@@ -1,5 +1,11 @@
 package internal
 
+import (
+	"context"
+	"errors"
+	"time"
+)
+
 // AdminCommand is the interface for admin commands. Admin commands come from HTTP API and are executed by
 // Coordinator synchronously.
 type AdminCommand interface {
@@ -21,8 +27,21 @@ func NewSetMasterCommand(nodeName string) SetMasterCommand {
 }
 
 func (cmd SetMasterCommand) Execute(coordinator *Coordinator) {
+	if !coordinator.isCandidate(cmd.nodeName) {
+		cmd.RespCh() <- errors.New("node is not a candidate")
+		return
+	}
+	if coordinator.master == cmd.nodeName {
+		cmd.RespCh() <- errors.New("node is already the master")
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(coordinator.config.Election.MaxWaitingTimeForConvergenceMs)*time.Millisecond)
+	defer cancel()
+	_ = coordinator.waitForConvergence(ctx)
+
 	coordinator.revokeCurrentMaster()
-	cmd.respCh <- coordinator.setMaster(cmd.nodeName)
+	cmd.RespCh() <- coordinator.setMaster(cmd.nodeName)
 }
 
 func (cmd SetMasterCommand) RespCh() chan error {
