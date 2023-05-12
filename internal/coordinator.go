@@ -167,9 +167,13 @@ func (c *Coordinator) setMaster(nodeName string) error {
 	}
 
 	canonical := c.nodes[nodeName]
+	maxHeight := c.findMaxHeight()
 	canonicalStatus, err := canonical.opNode.SyncStatus(context.Background())
 	if err != nil {
 		return fmt.Errorf("fail to call optimism_syncStatus, node: %s, error: %s", canonical.name, err)
+	}
+	if canonicalStatus.UnsafeL2.Number < maxHeight {
+		return fmt.Errorf("new master height is lower than others, node: %s, maxHeight: %d", canonical.name, maxHeight)
 	}
 
 	if err = canonical.opNode.StartSequencer(context.Background(), canonicalStatus.UnsafeL2.Hash); err != nil {
@@ -258,7 +262,7 @@ func (c *Coordinator) findCanonicalCandidate() (*Node, error) {
 		candidate := c.nodes[nodeName]
 		syncStatus, err := candidate.opNode.SyncStatus(context.Background())
 		if err != nil {
-			zap.S().Errorw("Fail to call optimism_syncStatus", "node", candidate.name, "error", candidate.name, err)
+			zap.S().Errorw("Fail to call optimism_syncStatus", "node", candidate.name, "error", err)
 			continue
 		}
 
@@ -272,6 +276,17 @@ func (c *Coordinator) findCanonicalCandidate() (*Node, error) {
 		return nil, errors.New("no healthy candidates")
 	}
 	return canonical, nil
+}
+
+func (c *Coordinator) findMaxHeight() uint64 {
+	var maxHeight uint64 = 0
+	for _, node := range c.nodes {
+		syncStatus, err := node.opNode.SyncStatus(context.Background())
+		if err == nil && (maxHeight == 0 || maxHeight < syncStatus.UnsafeL2.Number) {
+			maxHeight = syncStatus.UnsafeL2.Number
+		}
+	}
+	return maxHeight
 }
 
 // findExistingMaster returns the existing master if its admin_sequencerStopped is false.
