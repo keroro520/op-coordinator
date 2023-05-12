@@ -2,8 +2,7 @@ package internal
 
 import (
 	"context"
-	"github.com/ethereum/go-ethereum/ethclient"
-	"github.com/node-real/op-coordinator/internal/client"
+	"github.com/node-real/op-coordinator/internal/metrics"
 	"go.uber.org/zap"
 	"sync"
 	"time"
@@ -59,12 +58,15 @@ func (c *HealthChecker) Start(ctx context.Context, nodes *map[string]*Node) {
 					return
 				case <-ticker.C:
 					var err error
-					if err = healthcheckOpGeth(context.Background(), node.opGeth); err == nil {
-						err = healthcheckOpNode(context.Background(), node.opNode)
+					if err = healthcheckOpGeth(context.Background(), node); err == nil {
+						err = healthcheckOpNode(context.Background(), node)
 					}
+
 					if err != nil {
+						metrics.MetricHealthCheckFailures.WithLabelValues(node.name).Inc()
 						zap.S().Errorw("Health check error", "node", nodeName, "error", err)
 					}
+
 					isFailure := err != nil
 					slidingWindow.Add(isFailure)
 				}
@@ -124,12 +126,18 @@ func (w *CumulativeSlidingWindow) Add(failure bool) {
 	w.cursor = (w.cursor + 1) % w.size
 }
 
-func healthcheckOpGeth(ctx context.Context, client *ethclient.Client) error {
-	_, err := client.HeaderByNumber(ctx, nil)
+func healthcheckOpGeth(ctx context.Context, node *Node) error {
+	start := time.Now()
+	_, err := node.opGeth.HeaderByNumber(ctx, nil)
+	duration := time.Since(start)
+	metrics.MetricHealthCheckOpGethDuration.WithLabelValues(node.name).Observe(float64(duration.Milliseconds()))
 	return err
 }
 
-func healthcheckOpNode(ctx context.Context, client *client.OpNodeClient) error {
-	_, err := client.SyncStatus(ctx)
+func healthcheckOpNode(ctx context.Context, node *Node) error {
+	start := time.Now()
+	_, err := node.opNode.SyncStatus(ctx)
+	duration := time.Since(start)
+	metrics.MetricHealthCheckOpNodeDuration.WithLabelValues(node.name).Observe(float64(duration.Milliseconds()))
 	return err
 }

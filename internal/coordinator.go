@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/ethereum-optimism/optimism/op-node/eth"
+	"github.com/node-real/op-coordinator/internal/metrics"
 	"go.uber.org/zap"
 	"sync"
 	"time"
@@ -72,9 +73,16 @@ func (c *Coordinator) loop(ctx context.Context) {
 		case <-ticker.C:
 			if c.master == "" {
 				if c.hasSufficientHealthyNodes() {
-					if err := c.elect(); err != nil {
+					start := time.Now()
+					var err error
+					if err = c.elect(); err != nil {
 						zap.S().Errorw("Fail to elect master", "error", err)
+						metrics.MetricElectionFailures.Inc()
 					}
+
+					duration := time.Since(start)
+					metrics.MetricElections.Inc()
+					metrics.MetricElectionDuration.Observe(float64(duration.Milliseconds()))
 				}
 				continue
 			}
@@ -83,10 +91,6 @@ func (c *Coordinator) loop(ctx context.Context) {
 				c.revokeCurrentMaster()
 			} else {
 				if lastMasterCheck.Add(3 * time.Second).Before(time.Now()) {
-					if c.master == "" {
-						zap.S().Warnw("Empty master", "hasSufficientHealthyNodes", c.hasSufficientHealthyNodes())
-					}
-
 					if stopped, err := c.nodes[c.master].opNode.SequencerStopped(ctx); err == nil && stopped {
 						// In the case that the master node has been restarted, it loses `SequencerStopped=false` state,
 						// so we have to set `SequencerStopped=false` to reuse it as master.
@@ -178,7 +182,12 @@ func (c *Coordinator) setMaster(nodeName string) error {
 }
 
 func (c *Coordinator) waitForConvergence(ctx context.Context) bool {
-	zap.S().Info("Wait nodes to converge on the same height")
+	start := time.Now()
+	defer func() {
+		duration := time.Since(start)
+		metrics.MetricWaitingConvergenceDuration.Observe(float64(duration.Milliseconds()))
+		zap.S().Infow("Wait nodes to converge on the same height", "elapsed", duration)
+	}()
 
 	ticker := time.NewTicker(10 * time.Millisecond)
 	for {
