@@ -211,38 +211,28 @@ func (c *Coordinator) waitForConvergence(ctx context.Context) bool {
 // nodesConverged checks if all healthy nodes have the same unsafe_l2 height
 func (c *Coordinator) nodesConverged() bool {
 	var convergence uint64 = 0
-	var resultCh = make(chan uint64, len(c.nodes))
+	var convergenceFlag = true
+	var convergenceLock sync.Mutex
 	var wg sync.WaitGroup
 
+	wg.Add(len(c.nodes))
 	for _, node := range c.nodes {
-		if !c.healthChecker.IsHealthy(node.name) {
-			continue
-		}
-
-		wg.Add(1)
 		go func(node *Node) {
 			defer wg.Done()
-
 			if syncStatus, err := node.opNode.SyncStatus(context.Background()); err == nil {
-				resultCh <- syncStatus.UnsafeL2.Number
-			} else {
-				zap.S().Errorw("Fail to call optimism_syncStatus", "node", node.name, "error", err)
+				convergenceLock.Lock()
+				defer convergenceLock.Unlock()
+				if convergence == 0 {
+					convergence = syncStatus.UnsafeL2.Number
+				} else if convergence != syncStatus.UnsafeL2.Number {
+					convergenceFlag = false
+				}
 			}
 		}(node)
 	}
 	wg.Wait()
 
-	for unsafeL2 := range resultCh {
-		if convergence == 0 {
-			convergence = unsafeL2
-		} else if convergence != unsafeL2 {
-			return false
-		}
-		if len(resultCh) == 0 {
-			break
-		}
-	}
-	return true
+	return convergenceFlag
 }
 
 func (c *Coordinator) isCandidate(nodeName string) bool {
@@ -280,12 +270,22 @@ func (c *Coordinator) findCanonicalCandidate() (*Node, error) {
 
 func (c *Coordinator) findMaxHeight() uint64 {
 	var maxHeight uint64 = 0
+	var maxHeightLock sync.Mutex
+	var wg sync.WaitGroup
+	wg.Add(len(c.nodes))
 	for _, node := range c.nodes {
-		syncStatus, err := node.opNode.SyncStatus(context.Background())
-		if err == nil && (maxHeight == 0 || maxHeight < syncStatus.UnsafeL2.Number) {
-			maxHeight = syncStatus.UnsafeL2.Number
-		}
+		go func(node *Node) {
+			defer wg.Done()
+			if syncStatus, err := node.opNode.SyncStatus(context.Background()); err == nil {
+				maxHeightLock.Lock()
+				defer maxHeightLock.Unlock()
+				if maxHeight == 0 || maxHeight < syncStatus.UnsafeL2.Number {
+					maxHeight = syncStatus.UnsafeL2.Number
+				}
+			}
+		}(node)
 	}
+	wg.Wait()
 	return maxHeight
 }
 
@@ -298,26 +298,30 @@ func (c *Coordinator) findMaxHeight() uint64 {
 func (c *Coordinator) findExistingMaster() *Node {
 	var found *Node
 	var foundUnsafeL2 = uint64(0)
+	var foundLock sync.Mutex
+	var wg sync.WaitGroup
+
+	wg.Add(len(c.config.Candidates))
 	for nodeName := range c.config.Candidates {
-		if c.isCandidate(nodeName) {
-			candidate := c.nodes[nodeName]
+		candidate := c.nodes[nodeName]
+
+		go func(candidate *Node) {
+			defer wg.Done()
 			sequencerStopped, err := candidate.opNode.SequencerStopped(context.Background())
 			if err == nil && sequencerStopped == false {
-				zap.S().Infow("Found existing master", "node", nodeName)
-
 				syncStatus, err := candidate.opNode.SyncStatus(context.Background())
-				if err != nil {
-					zap.S().Errorw("Fail to call optimism_syncStatus", "node", candidate.name, "error", err)
-					continue
-				}
-
-				if foundUnsafeL2 < syncStatus.UnsafeL2.Number {
-					found = candidate
-					foundUnsafeL2 = syncStatus.UnsafeL2.Number
+				if err == nil {
+					foundLock.Lock()
+					defer foundLock.Unlock()
+					if foundUnsafeL2 < syncStatus.UnsafeL2.Number {
+						found = candidate
+						foundUnsafeL2 = syncStatus.UnsafeL2.Number
+					}
 				}
 			}
-		}
+		}(candidate)
 	}
+	wg.Wait()
 
 	return found
 }
