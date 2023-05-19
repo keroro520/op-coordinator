@@ -26,11 +26,23 @@ type RpcServer struct {
 func NewRPCServer(rpcCfg config.RpcConfig, appVersion string, c *coordinator.Coordinator) *RpcServer {
 	endpoint := net.JoinHostPort(rpcCfg.Host, strconv.Itoa(rpcCfg.Port))
 	coordinatorAPI := http_.NewCoordinatorAPI(appVersion, c)
+	rollupAPI := http_.NewRollupAPI(c)
+	ethAPI := http_.NewEthAPI(c)
 	r := &RpcServer{
 		endpoint: endpoint,
 		apis: []rpc.API{{
 			Namespace:     "coordinator",
 			Service:       coordinatorAPI,
+			Public:        true,
+			Authenticated: false,
+		}, {
+			Namespace:     "optimism",
+			Service:       rollupAPI,
+			Public:        true,
+			Authenticated: false,
+		}, {
+			Namespace:     "eth",
+			Service:       ethAPI,
 			Public:        true,
 			Authenticated: false,
 		}},
