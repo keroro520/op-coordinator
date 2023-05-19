@@ -56,7 +56,7 @@ func startHandleFunc(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	server := internal.NewRPCServer(config.RPC, "v1.0", c)
+	server := internal.NewRPCServer(config, "v1.0", c)
 	err = server.Start()
 	if err != nil {
 		zap.S().Errorf("Fail to start rpc server, error: %v", err)
