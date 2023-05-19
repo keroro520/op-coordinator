@@ -1,31 +1,21 @@
 [bridges]
 
-[bridges.bridge-1]
-op_node_public_rpc_url = 'http://127.0.0.1:8545'
-op_node_p2p_rpc_url = 'http://127.0.0.1:8545'
-op_geth_public_rpc_url = 'http://127.0.0.1:8545'
-
-[bridges.bridge-2]
-op_node_public_rpc_url = 'http://127.0.0.1:8545'
-op_node_p2p_rpc_url = 'http://127.0.0.1:8545'
-op_geth_public_rpc_url = 'http://127.0.0.1:8545'
 
 [candidates]
 
-[candidates.candidates-1]
-op_node_public_rpc_url = 'http://127.0.0.1:8545'
-op_node_p2p_rpc_url = 'http://127.0.0.1:8545'
+[candidates.seq0]
+op_node_public_rpc_url = 'http://127.0.0.1:7545'
 op_geth_public_rpc_url = 'http://127.0.0.1:8545'
 
-[candidates.candidates-2]
-op_node_public_rpc_url = 'http://127.0.0.1:8545'
-op_node_p2p_rpc_url = 'http://127.0.0.1:8545'
-op_geth_public_rpc_url = 'http://127.0.0.1:8545'
-
-[candidates.candidates-3]
-op_node_public_rpc_url = 'http://127.0.0.1:8545'
-op_node_p2p_rpc_url = 'http://127.0.0.1:8545'
-op_geth_public_rpc_url = 'http://127.0.0.1:8545'
+# [candidates.seq1]
+# op_node_public_rpc_url = 'http://127.0.0.1:8545'
+# op_node_p2p_rpc_url = 'http://127.0.0.1:8545'
+# op_geth_public_rpc_url = 'http://127.0.0.1:8545'
+# 
+# [candidates.seq2]
+# op_node_public_rpc_url = 'http://127.0.0.1:8545'
+# op_node_p2p_rpc_url = 'http://127.0.0.1:8545'
+# op_geth_public_rpc_url = 'http://127.0.0.1:8545'
 
 [metrics]
 host = "0.0.0.0"

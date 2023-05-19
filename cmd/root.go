@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"github.com/node-real/op-coordinator/internal"
+	config_ "github.com/node-real/op-coordinator/internal/config"
+	"github.com/node-real/op-coordinator/internal/coordinator"
 	"github.com/node-real/op-coordinator/internal/metrics"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
@@ -48,13 +50,13 @@ func StartCommand() *cobra.Command {
 func startHandleFunc(cmd *cobra.Command, args []string) error {
 	fmt.Printf("Start service, version is %v\n", Version)
 
-	coordinator, err := internal.NewCoordinator(config)
+	c, err := coordinator.NewCoordinator(config)
 	if err != nil {
 		zap.S().Error("Fail to create coordinator, error: %+v", err)
 		return err
 	}
 
-	server := internal.NewRPCServer(config.RPC, "v1.0", coordinator)
+	server := internal.NewRPCServer(config.RPC, "v1.0", c)
 	err = server.Start()
 	if err != nil {
 		zap.S().Errorf("Fail to start rpc server, error: %v", err)
@@ -64,7 +66,7 @@ func startHandleFunc(cmd *cobra.Command, args []string) error {
 	metricsAddr := fmt.Sprintf("%s:%d", config.Metrics.Host, config.Metrics.Port)
 	metrics.StartMetrics(metricsAddr)
 
-	coordinator.Start(context.Background())
+	c.Start(context.Background())
 
 	return nil
 }
@@ -82,7 +84,7 @@ func VersionHandleFunc(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
-var config internal.Config
+var config config_.Config
 
 func initConfig() {
 

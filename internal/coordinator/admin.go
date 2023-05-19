@@ -1,4 +1,4 @@
-package internal
+package coordinator
 
 import (
 	"context"
@@ -31,7 +31,7 @@ func (cmd SetMasterCommand) Execute(coordinator *Coordinator) {
 		cmd.RespCh() <- errors.New("node is not a candidate")
 		return
 	}
-	if coordinator.master == cmd.nodeName {
+	if coordinator.Master == cmd.nodeName {
 		cmd.RespCh() <- errors.New("node is already the master")
 		return
 	}

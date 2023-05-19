@@ -1,31 +1,33 @@
-package internal
+package coordinator
 
 import (
 	"context"
 	"errors"
 	"fmt"
 	"github.com/ethereum-optimism/optimism/op-node/eth"
+	"github.com/node-real/op-coordinator/internal/config"
 	"github.com/node-real/op-coordinator/internal/metrics"
+	"github.com/node-real/op-coordinator/internal/types"
 	"go.uber.org/zap"
 	"sync"
 	"time"
 )
 
 type Coordinator struct {
-	config Config
+	config config.Config
 
-	master string
-	nodes  map[string]*Node
+	Master string
+	Nodes  map[string]*types.Node
 
 	healthChecker *HealthChecker
 
 	adminCh chan AdminCommand
 }
 
-func NewCoordinator(config Config) (*Coordinator, error) {
+func NewCoordinator(config config.Config) (*Coordinator, error) {
 	c := Coordinator{
 		config: config,
-		nodes:  make(map[string]*Node),
+		Nodes:  make(map[string]*types.Node),
 		healthChecker: NewHealthChecker(
 			time.Duration(config.HealthCheck.IntervalMs)*time.Millisecond,
 			config.HealthCheck.FailureThresholdLast5,
@@ -36,13 +38,13 @@ func NewCoordinator(config Config) (*Coordinator, error) {
 	// Create clients for nodes
 	var err error
 	for nodeName, nodeCfg := range config.Candidates {
-		c.nodes[nodeName], err = NewNode(nodeName, nodeCfg.OpNodePublicRpcUrl, nodeCfg.OpGethPublicRpcUrl)
+		c.Nodes[nodeName], err = types.NewNode(nodeName, nodeCfg.OpNodePublicRpcUrl, nodeCfg.OpGethPublicRpcUrl)
 		if err != nil {
 			return nil, err
 		}
 	}
 	for nodeName, nodeCfg := range config.Bridges {
-		c.nodes[nodeName], err = NewNode(nodeName, nodeCfg.OpNodePublicRpcUrl, nodeCfg.OpGethPublicRpcUrl)
+		c.Nodes[nodeName], err = types.NewNode(nodeName, nodeCfg.OpNodePublicRpcUrl, nodeCfg.OpGethPublicRpcUrl)
 		if err != nil {
 			return nil, err
 		}
@@ -52,7 +54,7 @@ func NewCoordinator(config Config) (*Coordinator, error) {
 }
 
 func (c *Coordinator) Start(ctx context.Context) {
-	go c.healthChecker.Start(ctx, &c.nodes)
+	go c.healthChecker.Start(ctx, &c.Nodes)
 
 	zap.S().Info("Coordinator start")
 	c.loop(ctx)
@@ -71,7 +73,7 @@ func (c *Coordinator) loop(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			if c.master == "" {
+			if c.Master == "" {
 				if c.hasSufficientHealthyNodes() {
 					start := time.Now()
 					var err error
@@ -87,15 +89,15 @@ func (c *Coordinator) loop(ctx context.Context) {
 				continue
 			}
 
-			if !c.healthChecker.IsHealthy(c.master) {
+			if !c.healthChecker.IsHealthy(c.Master) {
 				c.revokeCurrentMaster()
 			} else {
 				if lastMasterCheck.Add(3 * time.Second).Before(time.Now()) {
-					if stopped, err := c.nodes[c.master].opNode.SequencerStopped(ctx); err == nil && stopped {
+					if stopped, err := c.Nodes[c.Master].OpNode.SequencerStopped(ctx); err == nil && stopped {
 						// In the case that the master node has been restarted, it loses `SequencerStopped=false` state,
 						// so we have to set `SequencerStopped=false` to reuse it as master.
-						previous := c.master
-						c.master = ""
+						previous := c.Master
+						c.Master = ""
 						c.setMaster(previous)
 					}
 
@@ -108,11 +110,11 @@ func (c *Coordinator) loop(ctx context.Context) {
 	}
 }
 
-// hasSufficientHealthyNodes checks if there are sufficient healthy nodes to elect a new master.
+// hasSufficientHealthyNodes checks if there are sufficient healthy nodes to elect a new Master.
 func (c *Coordinator) hasSufficientHealthyNodes() bool {
 	healthyCandidates := 0
-	for _, node := range c.nodes {
-		if /* c.isCandidate(node.name) && */ c.healthChecker.IsHealthy(node.name) {
+	for _, node := range c.Nodes {
+		if /* c.isCandidate(node.name) && */ c.healthChecker.IsHealthy(node.Name) {
 			healthyCandidates++
 		}
 	}
@@ -120,29 +122,29 @@ func (c *Coordinator) hasSufficientHealthyNodes() bool {
 	return healthyCandidates >= c.config.Election.MinRequiredHealthyNodes
 }
 
-// revokeCurrentMaster revokes the leadership of the current master.
+// revokeCurrentMaster revokes the leadership of the current Master.
 func (c *Coordinator) revokeCurrentMaster() {
-	if c.master == "" {
+	if c.Master == "" {
 		return
 	}
 
-	zap.S().Warnf("Revoke master %s", c.master)
+	zap.S().Warnf("Revoke master %s", c.Master)
 
 	// Stop the sequencer by calling admin_stopSequencer
 	// It's fine even if the call fails because the leadership will be revoked anyway and the node is unable to
 	// produce blocks.
-	client := c.nodes[c.master]
-	if _, err := client.opNode.StopSequencer(context.Background()); err != nil {
-		zap.S().Errorw("Fail to call admin_stopSequencer even though its leadership will be revoked", "node", c.master, "error", err)
+	client := c.Nodes[c.Master]
+	if _, err := client.OpNode.StopSequencer(context.Background()); err != nil {
+		zap.S().Errorw("Fail to call admin_stopSequencer even though its leadership will be revoked", "node", c.Master, "error", err)
 	}
 
-	c.master = ""
+	c.Master = ""
 }
 
 func (c *Coordinator) elect() error {
 	zap.S().Info("Start election")
 	if existingMaster := c.findExistingMaster(); existingMaster != nil {
-		c.master = existingMaster.name
+		c.Master = existingMaster.Name
 		return nil
 	}
 
@@ -155,33 +157,33 @@ func (c *Coordinator) elect() error {
 		return fmt.Errorf("fail to find canonical candidate, error: %s", err)
 	}
 
-	return c.setMaster(canonical.name)
+	return c.setMaster(canonical.Name)
 }
 
 func (c *Coordinator) setMaster(nodeName string) error {
 	if !c.isCandidate(nodeName) {
 		return errors.New("node is not a candidate")
 	}
-	if c.master == nodeName {
+	if c.Master == nodeName {
 		return errors.New("node is already the master")
 	}
 
-	canonical := c.nodes[nodeName]
+	canonical := c.Nodes[nodeName]
 	maxHeight := c.findMaxHeight()
-	canonicalStatus, err := canonical.opNode.SyncStatus(context.Background())
+	canonicalStatus, err := canonical.OpNode.SyncStatus(context.Background())
 	if err != nil {
-		return fmt.Errorf("fail to call optimism_syncStatus, node: %s, error: %s", canonical.name, err)
+		return fmt.Errorf("fail to call optimism_syncStatus, node: %s, error: %s", canonical.Name, err)
 	}
 	if canonicalStatus.UnsafeL2.Number < maxHeight {
-		return fmt.Errorf("new master height is lower than others, node: %s, maxHeight: %d", canonical.name, maxHeight)
+		return fmt.Errorf("new master height is lower than others, node: %s, maxHeight: %d", canonical.Name, maxHeight)
 	}
 
-	if err = canonical.opNode.StartSequencer(context.Background(), canonicalStatus.UnsafeL2.Hash); err != nil {
-		return fmt.Errorf("fail to call admin_startSequencer, node: %s, error: %s", canonical.name, err)
+	if err = canonical.OpNode.StartSequencer(context.Background(), canonicalStatus.UnsafeL2.Hash); err != nil {
+		return fmt.Errorf("fail to call admin_startSequencer, node: %s, error: %s", canonical.Name, err)
 	}
 
-	c.master = nodeName
-	zap.S().Infow("Success to elect new master", "node", c.master, "unsafe_l2", canonicalStatus.UnsafeL2)
+	c.Master = nodeName
+	zap.S().Infow("Success to elect new master", "node", c.Master, "unsafe_l2", canonicalStatus.UnsafeL2)
 	return nil
 }
 
@@ -215,11 +217,11 @@ func (c *Coordinator) nodesConverged() bool {
 	var convergenceLock sync.Mutex
 	var wg sync.WaitGroup
 
-	wg.Add(len(c.nodes))
-	for _, node := range c.nodes {
-		go func(node *Node) {
+	wg.Add(len(c.Nodes))
+	for _, node := range c.Nodes {
+		go func(node *types.Node) {
 			defer wg.Done()
-			if syncStatus, err := node.opNode.SyncStatus(context.Background()); err == nil {
+			if syncStatus, err := node.OpNode.SyncStatus(context.Background()); err == nil {
 				convergenceLock.Lock()
 				defer convergenceLock.Unlock()
 				if convergence == 0 {
@@ -240,8 +242,8 @@ func (c *Coordinator) isCandidate(nodeName string) bool {
 }
 
 // findCanonicalCandidate finds the candidate with the highest unsafe_l2 height
-func (c *Coordinator) findCanonicalCandidate() (*Node, error) {
-	var canonical *Node
+func (c *Coordinator) findCanonicalCandidate() (*types.Node, error) {
+	var canonical *types.Node
 	var canonicalStatus *eth.SyncStatus
 	for nodeName := range c.config.Candidates {
 		// Filter healthy candidates
@@ -249,10 +251,10 @@ func (c *Coordinator) findCanonicalCandidate() (*Node, error) {
 			continue
 		}
 
-		candidate := c.nodes[nodeName]
-		syncStatus, err := candidate.opNode.SyncStatus(context.Background())
+		candidate := c.Nodes[nodeName]
+		syncStatus, err := candidate.OpNode.SyncStatus(context.Background())
 		if err != nil {
-			zap.S().Errorw("Fail to call optimism_syncStatus", "node", candidate.name, "error", err)
+			zap.S().Errorw("Fail to call optimism_syncStatus", "node", candidate.Name, "error", err)
 			continue
 		}
 
@@ -272,11 +274,11 @@ func (c *Coordinator) findMaxHeight() uint64 {
 	var maxHeight uint64 = 0
 	var maxHeightLock sync.Mutex
 	var wg sync.WaitGroup
-	wg.Add(len(c.nodes))
-	for _, node := range c.nodes {
-		go func(node *Node) {
+	wg.Add(len(c.Nodes))
+	for _, node := range c.Nodes {
+		go func(node *types.Node) {
 			defer wg.Done()
-			if syncStatus, err := node.opNode.SyncStatus(context.Background()); err == nil {
+			if syncStatus, err := node.OpNode.SyncStatus(context.Background()); err == nil {
 				maxHeightLock.Lock()
 				defer maxHeightLock.Unlock()
 				if maxHeight == 0 || maxHeight < syncStatus.UnsafeL2.Number {
@@ -292,24 +294,24 @@ func (c *Coordinator) findMaxHeight() uint64 {
 // findExistingMaster returns the existing master if its admin_sequencerStopped is false.
 //
 // Note that this function does not check if the existing master is healthy or not. Here are considerations:
-//   - If the existing master is healthy, it is okay for us to re-elect it as the master.
-//   - If the existing master is unhealthy, it will be revoked by the health checker when it detects the master is
-//     unhealthy and be called admin_stopSequencer. Then, we will re-elect a new master.
-func (c *Coordinator) findExistingMaster() *Node {
-	var found *Node
+//   - If the existing master is healthy, it is okay for us to re-elect it as the Master.
+//   - If the existing master is unhealthy, it will be revoked by the health checker when it detects the Master is
+//     unhealthy and be called admin_stopSequencer. Then, we will re-elect a new Master.
+func (c *Coordinator) findExistingMaster() *types.Node {
+	var found *types.Node
 	var foundUnsafeL2 = uint64(0)
 	var foundLock sync.Mutex
 	var wg sync.WaitGroup
 
 	wg.Add(len(c.config.Candidates))
 	for nodeName := range c.config.Candidates {
-		candidate := c.nodes[nodeName]
+		candidate := c.Nodes[nodeName]
 
-		go func(candidate *Node) {
+		go func(candidate *types.Node) {
 			defer wg.Done()
-			sequencerStopped, err := candidate.opNode.SequencerStopped(context.Background())
+			sequencerStopped, err := candidate.OpNode.SequencerStopped(context.Background())
 			if err == nil && sequencerStopped == false {
-				syncStatus, err := candidate.opNode.SyncStatus(context.Background())
+				syncStatus, err := candidate.OpNode.SyncStatus(context.Background())
 				if err == nil {
 					foundLock.Lock()
 					defer foundLock.Unlock()
