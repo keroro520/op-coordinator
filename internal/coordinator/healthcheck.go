@@ -1,8 +1,9 @@
-package internal
+package coordinator
 
 import (
 	"context"
 	"github.com/node-real/op-coordinator/internal/metrics"
+	"github.com/node-real/op-coordinator/internal/types"
 	"go.uber.org/zap"
 	"sync"
 	"time"
@@ -40,7 +41,7 @@ func (c *HealthChecker) IsHealthy(nodeName string) bool {
 	return c.windows[nodeName] != nil && c.windows[nodeName].Failures() <= c.failureThresholdLast5
 }
 
-func (c *HealthChecker) Start(ctx context.Context, nodes *map[string]*Node) {
+func (c *HealthChecker) Start(ctx context.Context, nodes *map[string]*types.Node) {
 	for nodeName, _ := range *nodes {
 		c.windows[nodeName] = NewCumulativeSlidingWindow(c.cumulativeSlidingWindowSize)
 	}
@@ -49,7 +50,7 @@ func (c *HealthChecker) Start(ctx context.Context, nodes *map[string]*Node) {
 	var wg sync.WaitGroup
 	for nodeName, node := range *nodes {
 		wg.Add(1)
-		go func(nodeName string, node *Node, slidingWindow *CumulativeSlidingWindow) {
+		go func(nodeName string, node *types.Node, slidingWindow *CumulativeSlidingWindow) {
 			defer wg.Done()
 			ticker := time.NewTicker(c.interval)
 			for {
@@ -63,7 +64,7 @@ func (c *HealthChecker) Start(ctx context.Context, nodes *map[string]*Node) {
 					}
 
 					if err != nil {
-						metrics.MetricHealthCheckFailures.WithLabelValues(node.name).Inc()
+						metrics.MetricHealthCheckFailures.WithLabelValues(node.Name).Inc()
 						zap.S().Errorw("Health check error", "node", nodeName, "error", err)
 					}
 
@@ -126,18 +127,18 @@ func (w *CumulativeSlidingWindow) Add(failure bool) {
 	w.cursor = (w.cursor + 1) % w.size
 }
 
-func healthcheckOpGeth(ctx context.Context, node *Node) error {
+func healthcheckOpGeth(ctx context.Context, node *types.Node) error {
 	start := time.Now()
-	_, err := node.opGeth.HeaderByNumber(ctx, nil)
+	_, err := node.OpGeth.HeaderByNumber(ctx, nil)
 	duration := time.Since(start)
-	metrics.MetricHealthCheckOpGethDuration.WithLabelValues(node.name).Observe(float64(duration.Milliseconds()))
+	metrics.MetricHealthCheckOpGethDuration.WithLabelValues(node.Name).Observe(float64(duration.Milliseconds()))
 	return err
 }
 
-func healthcheckOpNode(ctx context.Context, node *Node) error {
+func healthcheckOpNode(ctx context.Context, node *types.Node) error {
 	start := time.Now()
-	_, err := node.opNode.SyncStatus(ctx)
+	_, err := node.OpNode.SyncStatus(ctx)
 	duration := time.Since(start)
-	metrics.MetricHealthCheckOpNodeDuration.WithLabelValues(node.name).Observe(float64(duration.Milliseconds()))
+	metrics.MetricHealthCheckOpNodeDuration.WithLabelValues(node.Name).Observe(float64(duration.Milliseconds()))
 	return err
 }
