@@ -4,7 +4,9 @@ import (
 	"context"
 	"github.com/ethereum-optimism/optimism/op-node/client"
 	"github.com/ethereum-optimism/optimism/op-node/eth"
+	"github.com/ethereum-optimism/optimism/op-node/rollup"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/common/hexutil"
 )
 
 type OpNodeClient struct {
@@ -35,5 +37,23 @@ func (r *OpNodeClient) StartSequencer(ctx context.Context, blockHash common.Hash
 func (r *OpNodeClient) StopSequencer(ctx context.Context) (*common.Hash, error) {
 	var output *common.Hash
 	err := r.rpc.CallContext(ctx, &output, "admin_stopSequencer")
+	return output, err
+}
+
+func (r *OpNodeClient) OutputAtBlock(ctx context.Context, blockNum uint64) (*eth.OutputResponse, error) {
+	var output *eth.OutputResponse
+	err := r.rpc.CallContext(ctx, &output, "optimism_outputAtBlock", hexutil.Uint64(blockNum))
+	return output, err
+}
+
+func (r *OpNodeClient) RollupConfig(ctx context.Context) (*rollup.Config, error) {
+	var output *rollup.Config
+	err := r.rpc.CallContext(ctx, &output, "optimism_rollupConfig")
+	return output, err
+}
+
+func (r *OpNodeClient) Version(ctx context.Context) (string, error) {
+	var output string
+	err := r.rpc.CallContext(ctx, &output, "optimism_version")
 	return output, err
 }

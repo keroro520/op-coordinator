@@ -17,6 +17,7 @@ type Config struct {
 
 	HealthCheck HealthCheckConfig `toml:"health_check" mapstructure:"health_check"`
 	Election    ElectionConfig    `toml:"election" mapstructure:"election"`
+	Forward     ForwardConfig     `toml:"forward" mapstructure:"forward"`
 }
 
 type NodeConfig struct {
@@ -42,6 +43,10 @@ type HealthCheckConfig struct {
 type ElectionConfig struct {
 	MaxWaitingTimeForConvergenceMs int64 `toml:"max_waiting_time_for_convergence_ms" mapstructure:"max_waiting_time_for_convergence_ms"`
 	MinRequiredHealthyNodes        int   `toml:"min_required_healthy_nodes" mapstructure:"min_required_healthy_nodes"`
+}
+
+type ForwardConfig struct {
+	SubSyncStatusUnsafeL2Number int `toml:"sub_sync_status_unsafe_l2_number" mapstructure:"sub_sync_status_unsafe_l2_number"`
 }
 
 func (cfg *Config) Check() error {

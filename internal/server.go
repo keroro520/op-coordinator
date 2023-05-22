@@ -23,14 +23,26 @@ type RpcServer struct {
 	listenAddr net.Addr
 }
 
-func NewRPCServer(rpcCfg config.RpcConfig, appVersion string, c *coordinator.Coordinator) *RpcServer {
-	endpoint := net.JoinHostPort(rpcCfg.Host, strconv.Itoa(rpcCfg.Port))
+func NewRPCServer(cfg config.Config, appVersion string, c *coordinator.Coordinator) *RpcServer {
+	endpoint := net.JoinHostPort(cfg.RPC.Host, strconv.Itoa(cfg.RPC.Port))
 	coordinatorAPI := http_.NewCoordinatorAPI(appVersion, c)
+	rollupAPI := http_.NewRollupAPI(cfg, c)
+	ethAPI := http_.NewEthAPI(c)
 	r := &RpcServer{
 		endpoint: endpoint,
 		apis: []rpc.API{{
 			Namespace:     "coordinator",
 			Service:       coordinatorAPI,
+			Public:        true,
+			Authenticated: false,
+		}, {
+			Namespace:     "optimism",
+			Service:       rollupAPI,
+			Public:        true,
+			Authenticated: false,
+		}, {
+			Namespace:     "eth",
+			Service:       ethAPI,
 			Public:        true,
 			Authenticated: false,
 		}},
