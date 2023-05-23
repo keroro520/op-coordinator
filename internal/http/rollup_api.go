@@ -38,8 +38,8 @@ func (api *RollupAPI) SyncStatus(ctx context.Context) (*eth.SyncStatus, error) {
 	return syncStatus, nil
 }
 
-func (api *RollupAPI) OutputAtBlock(ctx context.Context, blockNum uint64) (*json.RawMessage, error) {
-	return api.callContext(ctx, "optimism_outputAtBlock", hexutil.Uint64(blockNum))
+func (api *RollupAPI) OutputAtBlock(ctx context.Context, blockNum hexutil.Uint64) (*json.RawMessage, error) {
+	return api.callContext(ctx, "optimism_outputAtBlock", blockNum)
 }
 
 func (api *RollupAPI) RollupConfig(ctx context.Context) (*json.RawMessage, error) {
