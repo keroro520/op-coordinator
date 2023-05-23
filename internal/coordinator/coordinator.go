@@ -14,7 +14,7 @@ import (
 )
 
 type Coordinator struct {
-	config config.Config
+	Config config.Config
 
 	Master string
 	Nodes  map[string]*types.Node
@@ -26,7 +26,7 @@ type Coordinator struct {
 
 func NewCoordinator(config config.Config) (*Coordinator, error) {
 	c := Coordinator{
-		config: config,
+		Config: config,
 		Nodes:  make(map[string]*types.Node),
 		healthChecker: NewHealthChecker(
 			time.Duration(config.HealthCheck.IntervalMs)*time.Millisecond,
@@ -73,6 +73,9 @@ func (c *Coordinator) loop(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
+			if c.Config.Election.Stopped {
+				continue
+			}
 			if c.Master == "" {
 				if c.hasSufficientHealthyNodes() {
 					start := time.Now()
@@ -119,7 +122,7 @@ func (c *Coordinator) hasSufficientHealthyNodes() bool {
 		}
 	}
 
-	return healthyCandidates >= c.config.Election.MinRequiredHealthyNodes
+	return healthyCandidates >= c.Config.Election.MinRequiredHealthyNodes
 }
 
 // revokeCurrentMaster revokes the leadership of the current Master.
@@ -148,7 +151,7 @@ func (c *Coordinator) elect() error {
 		return nil
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(c.config.Election.MaxWaitingTimeForConvergenceMs)*time.Millisecond)
+	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(c.Config.Election.MaxWaitingTimeForConvergenceMs)*time.Millisecond)
 	defer cancel()
 	_ = c.waitForConvergence(ctx)
 
@@ -238,14 +241,14 @@ func (c *Coordinator) nodesConverged() bool {
 }
 
 func (c *Coordinator) isCandidate(nodeName string) bool {
-	return c.config.Candidates[nodeName] != nil
+	return c.Config.Candidates[nodeName] != nil
 }
 
 // findCanonicalCandidate finds the candidate with the highest unsafe_l2 height
 func (c *Coordinator) findCanonicalCandidate() (*types.Node, error) {
 	var canonical *types.Node
 	var canonicalStatus *eth.SyncStatus
-	for nodeName := range c.config.Candidates {
+	for nodeName := range c.Config.Candidates {
 		// Filter healthy candidates
 		if !c.isCandidate(nodeName) || !c.healthChecker.IsHealthy(nodeName) {
 			continue
@@ -303,8 +306,8 @@ func (c *Coordinator) findExistingMaster() *types.Node {
 	var foundLock sync.Mutex
 	var wg sync.WaitGroup
 
-	wg.Add(len(c.config.Candidates))
-	for nodeName := range c.config.Candidates {
+	wg.Add(len(c.Config.Candidates))
+	for nodeName := range c.Config.Candidates {
 		candidate := c.Nodes[nodeName]
 
 		go func(candidate *types.Node) {

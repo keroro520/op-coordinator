@@ -41,6 +41,7 @@ type HealthCheckConfig struct {
 }
 
 type ElectionConfig struct {
+	Stopped                        bool  `toml:"stopped" mapstructure:"stopped"`
 	MaxWaitingTimeForConvergenceMs int64 `toml:"max_waiting_time_for_convergence_ms" mapstructure:"max_waiting_time_for_convergence_ms"`
 	MinRequiredHealthyNodes        int   `toml:"min_required_healthy_nodes" mapstructure:"min_required_healthy_nodes"`
 }

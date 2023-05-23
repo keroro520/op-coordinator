@@ -19,10 +19,30 @@ type SetMasterCommand struct {
 	respCh   chan error
 }
 
+type StartElectionCommand struct {
+	respCh chan error
+}
+
+type StopElectionCommand struct {
+	respCh chan error
+}
+
 func NewSetMasterCommand(nodeName string) SetMasterCommand {
 	return SetMasterCommand{
 		nodeName: nodeName,
 		respCh:   make(chan error),
+	}
+}
+
+func NewStartElectionCommand() StartElectionCommand {
+	return StartElectionCommand{
+		respCh: make(chan error),
+	}
+}
+
+func NewStopElectionCommand() StopElectionCommand {
+	return StopElectionCommand{
+		respCh: make(chan error),
 	}
 }
 
@@ -36,7 +56,7 @@ func (cmd SetMasterCommand) Execute(coordinator *Coordinator) {
 		return
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(coordinator.config.Election.MaxWaitingTimeForConvergenceMs)*time.Millisecond)
+	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(coordinator.Config.Election.MaxWaitingTimeForConvergenceMs)*time.Millisecond)
 	defer cancel()
 	_ = coordinator.waitForConvergence(ctx)
 
@@ -45,5 +65,23 @@ func (cmd SetMasterCommand) Execute(coordinator *Coordinator) {
 }
 
 func (cmd SetMasterCommand) RespCh() chan error {
+	return cmd.respCh
+}
+
+func (cmd StartElectionCommand) Execute(coordinator *Coordinator) {
+	coordinator.Config.Election.Stopped = false
+	cmd.RespCh() <- nil
+}
+
+func (cmd StartElectionCommand) RespCh() chan error {
+	return cmd.respCh
+}
+
+func (cmd StopElectionCommand) Execute(coordinator *Coordinator) {
+	coordinator.Config.Election.Stopped = true
+	cmd.RespCh() <- nil
+}
+
+func (cmd StopElectionCommand) RespCh() chan error {
 	return cmd.respCh
 }

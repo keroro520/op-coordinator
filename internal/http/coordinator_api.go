@@ -57,6 +57,24 @@ func (api *CoordinatorAPI) SetMaster(nodeName string) error {
 	return executeAdminCommand(ctx, api.coordinator, coordinator.NewSetMasterCommand(nodeName))
 }
 
+func (api *CoordinatorAPI) StartElection() error {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	return executeAdminCommand(ctx, api.coordinator, coordinator.NewStartElectionCommand())
+}
+
+func (api *CoordinatorAPI) StopElection() error {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	return executeAdminCommand(ctx, api.coordinator, coordinator.NewStopElectionCommand())
+}
+
+func (api *CoordinatorAPI) ElectionStopped() bool {
+	return api.coordinator.Config.Election.Stopped
+}
+
 // executeAdminCommand executes an admin command and returns the result.
 func executeAdminCommand(ctx context.Context, coordinator *coordinator.Coordinator, cmd coordinator.AdminCommand) error {
 	coordinator.AdminCh() <- cmd
