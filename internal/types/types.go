@@ -13,24 +13,26 @@ import (
 type Node struct {
 	Name      string
 	OpNode    *client.OpNodeClient
+	OpNodeRPC *rpc.Client
 	OpGeth    *ethclient.Client
 	OpGethRPC *rpc.Client
 }
 
 func NewNode(nodeName string, opNodeUrl string, opGethUrl string) (*Node, error) {
-	opNodeClient, err := dialOpNodeClientWithTimeout(context.Background(), opNodeUrl)
+	opNode, opNodeRPC, err := dialOpNodeClientWithTimeout(context.Background(), opNodeUrl)
 	if err != nil {
 		return nil, fmt.Errorf("dial OpNode error, nodeName: %s, OpNodeUrl: %s, error: %v", nodeName, opNodeUrl, err)
 	}
-	opGethClient, opGethRPC, err := dialEthClientWithTimeout(context.Background(), opGethUrl)
+	opGeth, opGethRPC, err := dialEthClientWithTimeout(context.Background(), opGethUrl)
 	if err != nil {
 		return nil, fmt.Errorf("dial OpGeth error, nodeName: %s, OpGethUrl: %s, error: %v", nodeName, opGethUrl, err)
 	}
 
 	return &Node{
 		Name:      nodeName,
-		OpNode:    opNodeClient,
-		OpGeth:    opGethClient,
+		OpNode:    opNode,
+		OpGeth:    opGeth,
+		OpNodeRPC: opNodeRPC,
 		OpGethRPC: opGethRPC,
 	}, nil
 }
@@ -59,14 +61,14 @@ func dialEthClientWithTimeout(ctx context.Context, url string) (*ethclient.Clien
 // dialOpNodeClientWithTimeout attempts to dial the RPC provider using the provided
 // URL. If the dial doesn't complete within defaultDialTimeout seconds, this
 // method will return an error.
-func dialOpNodeClientWithTimeout(ctx context.Context, url string) (*client.OpNodeClient, error) {
+func dialOpNodeClientWithTimeout(ctx context.Context, url string) (*client.OpNodeClient, *rpc.Client, error) {
 	ctxt, cancel := context.WithTimeout(ctx, defaultDialTimeout)
 	defer cancel()
 
 	rpcCl, err := rpc.DialContext(ctxt, url)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
-	return client.NewOpNodeClient(client2.NewBaseRPCClient(rpcCl)), nil
+	return client.NewOpNodeClient(client2.NewBaseRPCClient(rpcCl)), rpcCl, nil
 }

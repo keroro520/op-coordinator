@@ -51,21 +51,21 @@ func (api *CoordinatorAPI) GetMaster() string {
 }
 
 func (api *CoordinatorAPI) SetMaster(nodeName string) error {
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 300*time.Second)
 	defer cancel()
 
 	return executeAdminCommand(ctx, api.coordinator, coordinator.NewSetMasterCommand(nodeName))
 }
 
 func (api *CoordinatorAPI) StartElection() error {
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 300*time.Second)
 	defer cancel()
 
 	return executeAdminCommand(ctx, api.coordinator, coordinator.NewStartElectionCommand())
 }
 
 func (api *CoordinatorAPI) StopElection() error {
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 300*time.Second)
 	defer cancel()
 
 	return executeAdminCommand(ctx, api.coordinator, coordinator.NewStopElectionCommand())
