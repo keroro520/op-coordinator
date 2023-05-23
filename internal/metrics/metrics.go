@@ -81,7 +81,7 @@ var (
 
 func StartMetrics(addr string) {
 	go func() {
-		http.Handle("/metrics", promhttp.Handler())
+		http.Handle("/", promhttp.Handler())
 		if err := http.ListenAndServe(addr, nil); err != nil {
 			panic(err)
 		}
