@@ -9,6 +9,7 @@ import (
 	"github.com/node-real/op-coordinator/internal/metrics"
 	"github.com/node-real/op-coordinator/internal/types"
 	"go.uber.org/zap"
+	"strings"
 	"sync"
 	"time"
 )
@@ -181,7 +182,7 @@ func (c *Coordinator) setMaster(nodeName string) error {
 		return fmt.Errorf("new master height is lower than others, node: %s, maxHeight: %d", canonical.Name, maxHeight)
 	}
 
-	if err = canonical.OpNode.StartSequencer(context.Background(), canonicalStatus.UnsafeL2.Hash); err != nil {
+	if err = canonical.OpNode.StartSequencer(context.Background(), canonicalStatus.UnsafeL2.Hash); err != nil && !strings.Contains(err.Error(), "sequencer already running") {
 		return fmt.Errorf("fail to call admin_startSequencer, node: %s, error: %s", canonical.Name, err)
 	}
 
