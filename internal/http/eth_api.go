@@ -5,25 +5,25 @@ import (
 	"encoding/json"
 	"errors"
 	"github.com/ethereum/go-ethereum/rpc"
-	"github.com/node-real/op-coordinator/internal/coordinator"
+	"github.com/node-real/op-coordinator/internal/bridge"
 )
 
 type EthAPI struct {
-	coordinator *coordinator.Coordinator
+	highestBridge *bridge.HighestBridge
 }
 
-func NewEthAPI(c *coordinator.Coordinator) *EthAPI {
-	return &EthAPI{coordinator: c}
+func NewEthAPI(highestBridge *bridge.HighestBridge) *EthAPI {
+	return &EthAPI{highestBridge: highestBridge}
 }
 
 func (api *EthAPI) GetBlockByNumber(ctx context.Context, number rpc.BlockNumber, _detail bool) (*json.RawMessage, error) {
-	master := api.coordinator.Nodes[api.coordinator.Master]
-	if master == nil {
-		return nil, errors.New("empty master")
+	highestBridge := api.highestBridge.Highest()
+	if highestBridge == nil {
+		return nil, errors.New("all bridges are unavailable")
 	}
 
 	var result *json.RawMessage
-	err := master.OpGethRPC.CallContext(ctx, &result, "eth_getBlockByNumber", number, true)
+	err := highestBridge.OpGethRPC.CallContext(ctx, &result, "eth_getBlockByNumber", number, true)
 	if err != nil {
 		return nil, err
 	}

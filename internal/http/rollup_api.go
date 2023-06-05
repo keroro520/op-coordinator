@@ -6,26 +6,26 @@ import (
 	"errors"
 	"github.com/ethereum-optimism/optimism/op-node/eth"
 	"github.com/ethereum/go-ethereum/common/hexutil"
+	"github.com/node-real/op-coordinator/internal/bridge"
 	"github.com/node-real/op-coordinator/internal/config"
-	"github.com/node-real/op-coordinator/internal/coordinator"
 )
 
 type RollupAPI struct {
 	config.ForwardConfig
-	coordinator *coordinator.Coordinator
+	highestBridge *bridge.HighestBridge
 }
 
-func NewRollupAPI(cfg config.Config, c *coordinator.Coordinator) *RollupAPI {
-	return &RollupAPI{ForwardConfig: cfg.Forward, coordinator: c}
+func NewRollupAPI(cfg config.Config, highestBridge *bridge.HighestBridge) *RollupAPI {
+	return &RollupAPI{ForwardConfig: cfg.Forward, highestBridge: highestBridge}
 }
 
 func (api *RollupAPI) SyncStatus(ctx context.Context) (*eth.SyncStatus, error) {
-	master := api.coordinator.Nodes[api.coordinator.Master]
-	if master == nil {
-		return nil, errors.New("empty master")
+	highestBridge := api.highestBridge.Highest()
+	if highestBridge == nil {
+		return nil, errors.New("all bridges are unavailable")
 	}
 
-	syncStatus, err := master.OpNode.SyncStatus(ctx)
+	syncStatus, err := highestBridge.OpNode.SyncStatus(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -51,13 +51,13 @@ func (api *RollupAPI) Version(ctx context.Context) (*json.RawMessage, error) {
 }
 
 func (api *RollupAPI) callContext(ctx context.Context, method string, args ...interface{}) (*json.RawMessage, error) {
-	master := api.coordinator.Nodes[api.coordinator.Master]
-	if master == nil {
-		return nil, errors.New("empty master")
+	highestBridge := api.highestBridge.Highest()
+	if highestBridge == nil {
+		return nil, errors.New("all bridges are unavailable")
 	}
 
 	var result *json.RawMessage
-	err := master.OpNodeRPC.CallContext(ctx, &result, method, args...)
+	err := highestBridge.OpNodeRPC.CallContext(ctx, &result, method, args...)
 	if err != nil {
 		return nil, err
 	}
