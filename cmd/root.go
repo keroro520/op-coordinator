@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"github.com/node-real/op-coordinator/internal"
+	"github.com/node-real/op-coordinator/internal/bridge"
 	config_ "github.com/node-real/op-coordinator/internal/config"
 	"github.com/node-real/op-coordinator/internal/coordinator"
 	"github.com/node-real/op-coordinator/internal/metrics"
@@ -56,7 +57,13 @@ func startHandleFunc(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	server := internal.NewRPCServer(config, "v1.0", c)
+	h, err := bridge.NewHighestBridge(config)
+	if err != nil {
+		zap.S().Error("Fail to create highest bridge, error: %+v", err)
+		return err
+	}
+
+	server := internal.NewRPCServer(config, "v1.0", c, h)
 	err = server.Start()
 	if err != nil {
 		zap.S().Errorf("Fail to start rpc server, error: %v", err)

@@ -29,8 +29,10 @@ failure_threshold_last5 = 2
 interval_ms = 1000
 
 [election]
+stopped = false
 max_waiting_time_for_convergence_ms = 2000
 min_required_healthy_nodes = 1
 
 [forward]
+stopped = false
 sub_sync_status_unsafe_l2_number = 2

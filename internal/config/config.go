@@ -47,7 +47,8 @@ type ElectionConfig struct {
 }
 
 type ForwardConfig struct {
-	SubSyncStatusUnsafeL2Number int `toml:"sub_sync_status_unsafe_l2_number" mapstructure:"sub_sync_status_unsafe_l2_number"`
+	Stopped                     bool `toml:"stopped" mapstructure:"stopped"`
+	SubSyncStatusUnsafeL2Number int  `toml:"sub_sync_status_unsafe_l2_number" mapstructure:"sub_sync_status_unsafe_l2_number"`
 }
 
 func (cfg *Config) Check() error {
