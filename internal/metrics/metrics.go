@@ -39,6 +39,12 @@ var (
 		Buckets:   prometheus.DefBuckets,
 		Help:      "Tracks waiting convergence duration in milliseconds",
 	})
+	MetricIsMaster = promauto.NewGaugeVec(prometheus.GaugeOpts{
+		Namespace: Namespace,
+		Subsystem: Subsystem,
+		Name:      "is_master",
+		Help:      "Tracks whether the node is master",
+	}, []string{"node"})
 	MetricHealthCheckFailures = promauto.NewCounterVec(prometheus.CounterOpts{
 		Namespace: Namespace,
 		Subsystem: Subsystem,

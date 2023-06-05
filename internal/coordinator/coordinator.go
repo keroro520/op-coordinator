@@ -101,7 +101,7 @@ func (c *Coordinator) loop(ctx context.Context) {
 						// In the case that the master node has been restarted, it loses `SequencerStopped=false` state,
 						// so we have to set `SequencerStopped=false` to reuse it as master.
 						previous := c.Master
-						c.Master = ""
+						c.assignMaster("")
 						c.setMaster(previous)
 					}
 
@@ -142,13 +142,13 @@ func (c *Coordinator) revokeCurrentMaster() {
 		zap.S().Errorw("Fail to call admin_stopSequencer even though its leadership will be revoked", "node", c.Master, "error", err)
 	}
 
-	c.Master = ""
+	c.setMaster("")
 }
 
 func (c *Coordinator) elect() error {
 	zap.S().Info("Start election")
 	if existingMaster := c.findExistingMaster(); existingMaster != nil {
-		c.Master = existingMaster.Name
+		c.assignMaster(existingMaster.Name)
 		return nil
 	}
 
@@ -186,7 +186,7 @@ func (c *Coordinator) setMaster(nodeName string) error {
 		return fmt.Errorf("fail to call admin_startSequencer, node: %s, error: %s", canonical.Name, err)
 	}
 
-	c.Master = nodeName
+	c.assignMaster(nodeName)
 	zap.S().Infow("Success to elect new master", "node", c.Master, "unsafe_l2", canonicalStatus.UnsafeL2)
 	return nil
 }
@@ -330,4 +330,20 @@ func (c *Coordinator) findExistingMaster() *types.Node {
 	wg.Wait()
 
 	return found
+}
+
+func (c *Coordinator) assignMaster(master string) {
+	const FALSE = float64(0)
+	const TRUE = float64(1)
+
+	if c.Master != "" && c.Master != master {
+		metrics.MetricIsMaster.WithLabelValues(master).Set(FALSE)
+	}
+
+	if master != "" {
+		metrics.MetricIsMaster.WithLabelValues(master).Set(TRUE)
+	}
+
+	zap.S().Infow("assign master", "node", c.Master)
+	c.Master = master
 }
