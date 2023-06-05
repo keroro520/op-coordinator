@@ -45,6 +45,18 @@ var (
 		Name:      "is_master",
 		Help:      "Tracks whether the node is master",
 	}, []string{"node"})
+	MetricIsHealthy = promauto.NewGaugeVec(prometheus.GaugeOpts{
+		Namespace: Namespace,
+		Subsystem: Subsystem,
+		Name:      "is_healthy",
+		Help:      "Tracks whether the node is healthy",
+	}, []string{"node"})
+	MetricHealthCheckTotal = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: Namespace,
+		Subsystem: Subsystem,
+		Name:      "hc_count_total",
+		Help:      "Tracks total health check",
+	}, []string{"node"})
 	MetricHealthCheckFailures = promauto.NewCounterVec(prometheus.CounterOpts{
 		Namespace: Namespace,
 		Subsystem: Subsystem,
