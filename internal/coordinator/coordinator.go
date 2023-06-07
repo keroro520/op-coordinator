@@ -344,6 +344,6 @@ func (c *Coordinator) assignMaster(master string) {
 		metrics.MetricIsMaster.WithLabelValues(master).Set(TRUE)
 	}
 
-	zap.S().Infow("assign master", "node", c.Master)
+	zap.S().Infow("assign master", "node", master)
 	c.Master = master
 }
