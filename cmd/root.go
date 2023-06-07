@@ -62,6 +62,7 @@ func startHandleFunc(cmd *cobra.Command, args []string) error {
 		zap.S().Error("Fail to create highest bridge, error: %+v", err)
 		return err
 	}
+	go h.Start(context.Background())
 
 	server := internal.NewRPCServer(config, "v1.0", c, h)
 	err = server.Start()
