@@ -63,6 +63,7 @@ func (c *HealthChecker) Start(ctx context.Context, nodes *map[string]*types.Node
 						err = healthcheckOpNode(context.Background(), node)
 					}
 
+					metrics.MetricHealthCheckTotal.WithLabelValues(node.Name).Inc()
 					if err != nil {
 						metrics.MetricHealthCheckFailures.WithLabelValues(node.Name).Inc()
 						zap.S().Errorw("Health check error", "node", nodeName, "error", err)
@@ -74,6 +75,29 @@ func (c *HealthChecker) Start(ctx context.Context, nodes *map[string]*types.Node
 			}
 		}(nodeName, node, c.windows[nodeName])
 	}
+
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+
+		const FALSE = float64(0)
+		const TRUE = float64(1)
+		freshMetricsTicker := time.NewTicker(time.Second)
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-freshMetricsTicker.C:
+				for nodeName := range *nodes {
+					value := TRUE
+					if !c.IsHealthy(nodeName) {
+						value = FALSE
+					}
+					metrics.MetricIsHealthy.WithLabelValues(nodeName).Set(value)
+				}
+			}
+		}
+	}()
 
 	wg.Wait()
 }
