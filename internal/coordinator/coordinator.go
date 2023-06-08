@@ -142,7 +142,7 @@ func (c *Coordinator) revokeCurrentMaster() {
 		zap.S().Errorw("Fail to call admin_stopSequencer even though its leadership will be revoked", "node", c.Master, "error", err)
 	}
 
-	c.setMaster("")
+	c.assignMaster("")
 }
 
 func (c *Coordinator) elect() error {
