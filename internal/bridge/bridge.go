@@ -13,7 +13,8 @@ type HighestBridge struct {
 	Config config.Config
 	Nodes  map[string]*types.Node
 
-	highest string
+	highest           string
+	customizedHighest *types.Node
 }
 
 func NewHighestBridge(config config.Config) (*HighestBridge, error) {
@@ -42,10 +43,6 @@ func (h *HighestBridge) Start(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			if h.Config.Forward.Stopped {
-				continue
-			}
-
 			var highestSyncStatus *eth.SyncStatus = nil
 			for nodeName, node := range h.Nodes {
 				syncStatus, err := node.OpNode.SyncStatus(ctx)
@@ -68,9 +65,30 @@ func (h *HighestBridge) Start(ctx context.Context) {
 }
 
 func (h *HighestBridge) Highest() *types.Node {
+	if h.customizedHighest != nil {
+		return h.customizedHighest
+	}
 	if node, ok := h.Nodes[h.highest]; ok {
 		return node
 	} else {
 		return nil
 	}
+}
+
+// TODO: rename
+
+func (h *HighestBridge) SetHighest(opNodeUrl string, opGethUrl string) error {
+	zap.S().Infow("set highest bridge", "opNodeUrl", opNodeUrl, "opGethUrl", opGethUrl)
+
+	node, err := types.NewNode("setHighest", opNodeUrl, opGethUrl)
+	if err != nil {
+		return err
+	}
+
+	h.customizedHighest = node
+	return nil
+}
+
+func (h *HighestBridge) UnsetHighest() {
+	h.customizedHighest = nil
 }
