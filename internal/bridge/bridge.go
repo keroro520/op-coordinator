@@ -37,7 +37,7 @@ func NewHighestBridge(config config.Config) (*HighestBridge, error) {
 
 func (h *HighestBridge) Start(ctx context.Context) {
 	lastWarningTime := time.Now()
-	ticker := time.NewTicker(5 * time.Second)
+	ticker := time.NewTicker(20 * time.Second)
 	for {
 		select {
 		case <-ctx.Done():
@@ -51,6 +51,9 @@ func (h *HighestBridge) Start(ctx context.Context) {
 				}
 
 				if highestSyncStatus == nil || highestSyncStatus.UnsafeL2.Number < syncStatus.UnsafeL2.Number {
+					if h.highest != nodeName {
+						zap.S().Warnf("Switch highest bridge, new is %v", nodeName)
+					}
 					h.highest = nodeName
 					highestSyncStatus = syncStatus
 				}
