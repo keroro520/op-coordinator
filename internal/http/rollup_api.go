@@ -50,25 +50,6 @@ func (api *RollupAPI) Version(ctx context.Context) (*json.RawMessage, error) {
 	return api.callContext(ctx, "optimism_version")
 }
 
-func (api *RollupAPI) SetHighestBridge(_ context.Context, opNodeUrl string, opGethUrl string) error {
-	return api.highestBridge.SetHighest(opNodeUrl, opGethUrl)
-}
-func (api *RollupAPI) GetHighestBridge(_ context.Context) (string, error) {
-	if api.highestBridge == nil {
-		return "", errors.New("HighestBridge is empty")
-	}
-	node := api.highestBridge.Highest()
-	if node == nil {
-		return "", errors.New("HighestBridge is empty")
-	}
-	return node.Name, nil
-}
-
-func (api *RollupAPI) UnsetHighestBridge(_ context.Context) error {
-	api.highestBridge.UnsetHighest()
-	return nil
-}
-
 func (api *RollupAPI) callContext(ctx context.Context, method string, args ...interface{}) (*json.RawMessage, error) {
 	highestBridge := api.highestBridge.Highest()
 	if highestBridge == nil {
