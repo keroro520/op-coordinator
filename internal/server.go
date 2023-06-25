@@ -26,7 +26,7 @@ type RpcServer struct {
 
 func NewRPCServer(cfg config.Config, appVersion string, c *coordinator.Coordinator, h *bridge.HighestBridge) *RpcServer {
 	endpoint := net.JoinHostPort(cfg.RPC.Host, strconv.Itoa(cfg.RPC.Port))
-	coordinatorAPI := http_.NewCoordinatorAPI(appVersion, c)
+	coordinatorAPI := http_.NewCoordinatorAPI(appVersion, c, h)
 	rollupAPI := http_.NewRollupAPI(cfg, h)
 	ethAPI := http_.NewEthAPI(h)
 	r := &RpcServer{

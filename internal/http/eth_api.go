@@ -16,6 +16,9 @@ func NewEthAPI(highestBridge *bridge.HighestBridge) *EthAPI {
 	return &EthAPI{highestBridge: highestBridge}
 }
 
+// GetBlockByNumber Returns information of the block matching the given block number from the highest bridge node.
+//
+// This API is similar to the RPC `eth_getBlockByNumber` in go-ethereum.
 func (api *EthAPI) GetBlockByNumber(ctx context.Context, number rpc.BlockNumber, _detail bool) (*json.RawMessage, error) {
 	highestBridge := api.highestBridge.Highest()
 	if highestBridge == nil {
