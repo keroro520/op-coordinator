@@ -33,12 +33,150 @@ OpCoordinator will switch to a healthy backup sequencer.
 go install github.com/node-real/op-coordinator
 ```
 
-### Configuration
-
-TODO
-
 ### Running
 
 ```bash
 op-coordinator start --config config.yaml
 ```
+
+## RPC
+
+### `coordinator` Namespace
+
+#### `coordinator_getMaster`
+
+Returns the current master node name.
+
+RPC:
+
+```
+{"method": "coordinator_getMaster", "params": []}
+```
+
+#### `coordinator_setMaster`
+
+Sets the master node name manually.
+
+RPC:
+
+```
+{"method": "coordinator_setMaster", "params": [nodeName]}
+```
+
+- `nodeName`: A string represents the node name that will be set as the master node.
+
+#### `coordinator_startElection`
+
+Enables the auto-detection and auto-election process. See StopElection for more details.
+
+RPC:
+
+```
+{"method": "coordinator_startElection", "params": []}
+```
+
+#### `coordinator_stopElection`
+
+Disables the auto-detection and auto-election process. When the election is stopped, the master node
+will not be changed even if the current master node is down. The election process can be started again by calling
+StartElection.
+
+This API is used for debugging purpose and handling accidental situations.
+
+RPC:
+
+```
+{"method": "coordinator_stopElection", "params": []}
+```
+
+#### `coordinator_electionStopped`
+
+Returns whether the auto-election process is stopped.
+
+RPC:
+
+```
+{"method": "coordinator_electionStopped", "params": []}
+```
+
+#### `coordinator_requestBuildingBlock`
+
+Returns whether the requesting node is allowed to build a block.
+
+RequestBuildingBlock is called by the sequencer to request a building block. According to the high-availability
+design, the master node is the only node that can request a building block. If the master node is not the node
+that calls this function, the function returns an error. In another word, RequestBuildingBlock ensures that
+only the master node will build new blocks, so that we enforce the data consistency.
+
+Note that the `nodeName` parameter should be identical to the node name in the configuration file.
+
+RPC:
+
+```
+{"method": "coordinator_requestBuildingBlock", "params": [nodeName]}
+```
+
+- `nodeName`: the node name that requests to build a block.
+
+#### `coordinator_setHighestBridge`
+
+Sets the highest bridge node name manually.
+
+RPC:
+
+```
+{"method": "coordinator_setHighestBridge", "params": [nodeName]}
+```
+
+#### `coordinator_unsetHighestBridge`
+
+Unsets the highest bridge node name that was set manually via `coordinator_setHighestBridge` before.
+
+RPC:
+
+```
+{"method": "coordinator_unsetHighestBridge", "params": []}
+```
+
+#### `coordinator_getHighestBridge`
+
+Returns the highest bridge node name.
+
+RPC:
+
+```
+{"method": "coordinator_getHighestBridge", "params": []}
+```
+
+### `optimism` Namespace
+
+#### `optimism_syncStatus`
+
+See https://community.optimism.io/docs/developers/build/json-rpc/#eth-getblockrange
+
+#### `optimism_outputAtBlock`
+
+See https://community.optimism.io/docs/developers/build/json-rpc/#optimism-outputatblock
+
+#### `optimism_rollupConfig`
+
+See https://community.optimism.io/docs/developers/build/json-rpc/#optimism-rollupconfig
+
+#### `optimism_version`
+
+See https://community.optimism.io/docs/developers/build/json-rpc/#optimism-version
+
+### `eth` Namespace
+
+#### `eth_getBlockByNumber`
+
+Returns information of the block matching the given block number.
+
+RPC:
+
+```
+{"method": "eth_getBlockByNumber", "params": [blockTag, detail]}
+```
+
+- `blockTag`: The block number in hexadecimal format or the string latest, earliest, pending, safe or finalized.
+- `detail`: The method returns the full transaction objects when this value is true otherwise, it returns only the hashes of the transactions.
