@@ -3,11 +3,11 @@ package cmd
 import (
 	"context"
 	"fmt"
-	"github.com/node-real/op-coordinator/internal"
-	"github.com/node-real/op-coordinator/internal/bridge"
-	config_ "github.com/node-real/op-coordinator/internal/config"
-	"github.com/node-real/op-coordinator/internal/coordinator"
-	"github.com/node-real/op-coordinator/internal/metrics"
+	"github.com/node-real/op-coordinator/bridge"
+	config_ "github.com/node-real/op-coordinator/config"
+	"github.com/node-real/op-coordinator/core"
+	"github.com/node-real/op-coordinator/metrics"
+	"github.com/node-real/op-coordinator/rpc"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 	"go.uber.org/zap"
@@ -51,7 +51,7 @@ func StartCommand() *cobra.Command {
 func startHandleFunc(cmd *cobra.Command, args []string) error {
 	fmt.Printf("Start service, version is %v\n", Version)
 
-	c, err := coordinator.NewCoordinator(config)
+	c, err := core.NewCoordinator(config)
 	if err != nil {
 		zap.S().Error("Fail to create coordinator, error: %+v", err)
 		return err
@@ -64,7 +64,7 @@ func startHandleFunc(cmd *cobra.Command, args []string) error {
 	}
 	go h.Start(context.Background())
 
-	server := internal.NewRPCServer(config, "v1.0", c, h)
+	server := rpc.NewRPCServer(config, "v1.0", c, h)
 	err = server.Start()
 	if err != nil {
 		zap.S().Errorf("Fail to start rpc server, error: %v", err)

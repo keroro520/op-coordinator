@@ -3,8 +3,8 @@ package bridge
 import (
 	"context"
 	"github.com/ethereum-optimism/optimism/op-node/eth"
-	"github.com/node-real/op-coordinator/internal/config"
-	"github.com/node-real/op-coordinator/internal/types"
+	"github.com/node-real/op-coordinator/config"
+	"github.com/node-real/op-coordinator/types"
 	"go.uber.org/zap"
 	"time"
 )

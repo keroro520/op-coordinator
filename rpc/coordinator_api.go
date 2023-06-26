@@ -1,11 +1,11 @@
-package http
+package rpc
 
 import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/node-real/op-coordinator/internal/bridge"
-	"github.com/node-real/op-coordinator/internal/coordinator"
+	"github.com/node-real/op-coordinator/bridge"
+	coordinator2 "github.com/node-real/op-coordinator/core"
 	"go.uber.org/zap"
 	"time"
 )
@@ -13,12 +13,12 @@ import (
 // CoordinatorAPI is the API for the coordinator.
 type CoordinatorAPI struct {
 	version       string
-	coordinator   *coordinator.Coordinator
+	coordinator   *coordinator2.Coordinator
 	highestBridge *bridge.HighestBridge
 }
 
 // NewCoordinatorAPI creates a new CoordinatorAPI instance.
-func NewCoordinatorAPI(version string, c *coordinator.Coordinator, h *bridge.HighestBridge) *CoordinatorAPI {
+func NewCoordinatorAPI(version string, c *coordinator2.Coordinator, h *bridge.HighestBridge) *CoordinatorAPI {
 	return &CoordinatorAPI{version: version, coordinator: c, highestBridge: h}
 }
 
@@ -67,7 +67,7 @@ func (api *CoordinatorAPI) SetMaster(nodeName string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 300*time.Second)
 	defer cancel()
 
-	return executeAdminCommand(ctx, api.coordinator, coordinator.NewSetMasterCommand(nodeName))
+	return executeAdminCommand(ctx, api.coordinator, coordinator2.NewSetMasterCommand(nodeName))
 }
 
 // StartElection enables the auto-detection and auto-election process. See StopElection for more details.
@@ -75,7 +75,7 @@ func (api *CoordinatorAPI) StartElection() error {
 	ctx, cancel := context.WithTimeout(context.Background(), 300*time.Second)
 	defer cancel()
 
-	return executeAdminCommand(ctx, api.coordinator, coordinator.NewStartElectionCommand())
+	return executeAdminCommand(ctx, api.coordinator, coordinator2.NewStartElectionCommand())
 }
 
 // StopElection disables the auto-detection and auto-election process. When the election is stopped, the master node
@@ -87,7 +87,7 @@ func (api *CoordinatorAPI) StopElection() error {
 	ctx, cancel := context.WithTimeout(context.Background(), 300*time.Second)
 	defer cancel()
 
-	return executeAdminCommand(ctx, api.coordinator, coordinator.NewStopElectionCommand())
+	return executeAdminCommand(ctx, api.coordinator, coordinator2.NewStopElectionCommand())
 }
 
 // ElectionStopped returns true if the election process is stopped.
@@ -116,7 +116,7 @@ func (api *CoordinatorAPI) UnsetHighestBridge(_ context.Context) error {
 }
 
 // executeAdminCommand executes an admin command and returns the result.
-func executeAdminCommand(ctx context.Context, coordinator *coordinator.Coordinator, cmd coordinator.AdminCommand) error {
+func executeAdminCommand(ctx context.Context, coordinator *coordinator2.Coordinator, cmd coordinator2.AdminCommand) error {
 	coordinator.AdminCh() <- cmd
 
 	select {

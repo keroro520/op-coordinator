@@ -1,9 +1,9 @@
-package coordinator
+package core
 
 import (
 	"context"
-	"github.com/node-real/op-coordinator/internal/metrics"
-	"github.com/node-real/op-coordinator/internal/types"
+	"github.com/node-real/op-coordinator/metrics"
+	"github.com/node-real/op-coordinator/types"
 	"go.uber.org/zap"
 	"sync"
 	"time"

@@ -1,11 +1,11 @@
-package http
+package rpc
 
 import (
 	"context"
 	"encoding/json"
 	"errors"
 	"github.com/ethereum/go-ethereum/rpc"
-	"github.com/node-real/op-coordinator/internal/bridge"
+	"github.com/node-real/op-coordinator/bridge"
 )
 
 type EthAPI struct {

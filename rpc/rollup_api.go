@@ -1,4 +1,4 @@
-package http
+package rpc
 
 import (
 	"context"
@@ -6,8 +6,8 @@ import (
 	"errors"
 	"github.com/ethereum-optimism/optimism/op-node/eth"
 	"github.com/ethereum/go-ethereum/common/hexutil"
-	"github.com/node-real/op-coordinator/internal/bridge"
-	"github.com/node-real/op-coordinator/internal/config"
+	"github.com/node-real/op-coordinator/bridge"
+	"github.com/node-real/op-coordinator/config"
 )
 
 type RollupAPI struct {

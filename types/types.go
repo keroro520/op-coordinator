@@ -6,7 +6,7 @@ import (
 	client2 "github.com/ethereum-optimism/optimism/op-node/client"
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/rpc"
-	"github.com/node-real/op-coordinator/internal/client"
+	"github.com/node-real/op-coordinator/client"
 	"time"
 )
 

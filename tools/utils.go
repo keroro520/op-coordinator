@@ -1,9 +1,9 @@
-package internal
+package tools
 
 import (
 	"context"
 	"github.com/ethereum-optimism/optimism/op-node/client"
-	client2 "github.com/node-real/op-coordinator/internal/client"
+	client2 "github.com/node-real/op-coordinator/client"
 	"time"
 
 	"github.com/ethereum/go-ethereum/ethclient"
