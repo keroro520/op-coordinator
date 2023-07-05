@@ -337,7 +337,7 @@ func (c *Coordinator) assignMaster(master string) {
 	const TRUE = float64(1)
 
 	if c.Master != "" && c.Master != master {
-		metrics.MetricIsMaster.WithLabelValues(master).Set(FALSE)
+		metrics.MetricIsMaster.WithLabelValues(c.Master).Set(FALSE)
 	}
 
 	if master != "" {
