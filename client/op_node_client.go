@@ -26,6 +26,10 @@ func (r *OpNodeClient) SyncStatus(ctx context.Context) (*eth.SyncStatus, error) 
 func (r *OpNodeClient) SequencerStopped(ctx context.Context) (bool, error) {
 	var output bool
 	err := r.rpc.CallContext(ctx, &output, "admin_sequencerStopped")
+	if err != nil {
+		err = r.rpc.CallContext(ctx, &output, "admin_sequencerActive")
+		return !output, err
+	}
 	return output, err
 }
 
