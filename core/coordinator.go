@@ -182,6 +182,9 @@ func (c *Coordinator) setMaster(nodeName string) error {
 		return fmt.Errorf("new master height is lower than others, node: %s, maxHeight: %d", canonical.Name, maxHeight)
 	}
 
+	if err = canonical.OpNode.ResetDerivationPipeline(context.Background()); err != nil {
+		return fmt.Errorf("fail to call admin_resetDerivationPipeline, node: %s, error: %s", canonical.Name, err)
+	}
 	if err = canonical.OpNode.StartSequencer(context.Background(), canonicalStatus.UnsafeL2.Hash); err != nil && !strings.Contains(err.Error(), "sequencer already running") {
 		return fmt.Errorf("fail to call admin_startSequencer, node: %s, error: %s", canonical.Name, err)
 	}

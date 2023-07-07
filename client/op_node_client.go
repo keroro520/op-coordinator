@@ -44,6 +44,11 @@ func (r *OpNodeClient) StopSequencer(ctx context.Context) (*common.Hash, error) 
 	return output, err
 }
 
+func (r *OpNodeClient) ResetDerivationPipeline(ctx context.Context) error {
+	err := r.rpc.CallContext(ctx, nil, "admin_resetDerivationPipeline")
+	return err
+}
+
 func (r *OpNodeClient) OutputAtBlock(ctx context.Context, blockNum uint64) (*eth.OutputResponse, error) {
 	var output *eth.OutputResponse
 	err := r.rpc.CallContext(ctx, &output, "optimism_outputAtBlock", hexutil.Uint64(blockNum))
