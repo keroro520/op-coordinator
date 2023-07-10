@@ -53,7 +53,7 @@ func (api *CoordinatorAPI) RequestBuildingBlock(nodeName string) error {
 		}()
 		return fmt.Errorf("unknown master")
 	}
-
+	zap.S().Debugw("Allow to produce blocks", "node", nodeName, "")
 	return nil
 }
 
