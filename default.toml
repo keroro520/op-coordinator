@@ -36,3 +36,5 @@ min_required_healthy_nodes = 1
 [forward]
 stopped = false
 sub_sync_status_unsafe_l2_number = 2
+
+log_level = "debug"

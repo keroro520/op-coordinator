@@ -94,12 +94,14 @@ func (c *Coordinator) loop(ctx context.Context) {
 			}
 
 			if !c.healthChecker.IsHealthy(c.Master) {
+				zap.S().Warnw("Master is not healthy", "master", c.Master)
 				c.revokeCurrentMaster()
 			} else {
 				if lastMasterCheck.Add(3 * time.Second).Before(time.Now()) {
 					if stopped, err := c.Nodes[c.Master].OpNode.SequencerStopped(ctx); err == nil && stopped {
 						// In the case that the master node has been restarted, it loses `SequencerStopped=false` state,
 						// so we have to set `SequencerStopped=false` to reuse it as master.
+						zap.S().Warnw("Master state is inconsistent", "master", c.Master)
 						previous := c.Master
 						c.assignMaster("")
 						c.setMaster(previous)
