@@ -2,24 +2,23 @@ package rpc
 
 import (
 	"context"
-	"errors"
 	"fmt"
-	"github.com/node-real/op-coordinator/bridge"
+	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/log"
 	coordinator2 "github.com/node-real/op-coordinator/core"
-	"go.uber.org/zap"
 	"time"
 )
 
 // CoordinatorAPI is the API for the coordinator.
 type CoordinatorAPI struct {
-	version       string
-	coordinator   *coordinator2.Coordinator
-	highestBridge *bridge.HighestBridge
+	log         log.Logger
+	version     string
+	coordinator *coordinator2.Coordinator
 }
 
 // NewCoordinatorAPI creates a new CoordinatorAPI instance.
-func NewCoordinatorAPI(version string, c *coordinator2.Coordinator, h *bridge.HighestBridge) *CoordinatorAPI {
-	return &CoordinatorAPI{version: version, coordinator: c, highestBridge: h}
+func NewCoordinatorAPI(version string, c *coordinator2.Coordinator, log log.Logger) *CoordinatorAPI {
+	return &CoordinatorAPI{log: log, version: version, coordinator: c}
 }
 
 func (api *CoordinatorAPI) Version() (string, error) {
@@ -39,21 +38,21 @@ func (api *CoordinatorAPI) RequestBuildingBlock(nodeName string) error {
 
 	if api.coordinator.Master != nodeName {
 		go func() {
-			zap.S().Warnw("Invalid master is requesting!", "master", api.coordinator.Master, "node", nodeName)
+			api.log.Warn("Invalid master is requesting!", "master", api.coordinator.Master, "node", nodeName)
 
 			node := api.coordinator.Nodes[nodeName]
 			if node != nil && node.OpNode != nil {
 				blockHash, err := node.OpNode.StopSequencer(context.Background())
 				if err != nil {
-					zap.S().Errorw("Fail to call admin_stopSequencer", "node", nodeName, "error", err)
+					api.log.Error("Call admin_stopSequencer when RequestBuildingBlock", "node", nodeName, "error", err)
 				} else {
-					zap.S().Infow("Success to call admin_stopSequencer", "blockHash", blockHash.String())
+					api.log.Info("Call admin_stopSequencer", "node", nodeName, "blockHash", blockHash.String())
 				}
 			}
 		}()
 		return fmt.Errorf("unknown master")
 	}
-	zap.S().Debugw("Allow to produce blocks", "node", nodeName)
+	api.log.Debug("Allow to produce blocks", "node", nodeName)
 	return nil
 }
 
@@ -95,24 +94,8 @@ func (api *CoordinatorAPI) ElectionStopped() bool {
 	return api.coordinator.Config.Election.Stopped
 }
 
-func (api *CoordinatorAPI) SetHighestBridge(_ context.Context, opNodeUrl string, opGethUrl string) error {
-	return api.highestBridge.SetHighest(opNodeUrl, opGethUrl)
-}
-
-func (api *CoordinatorAPI) GetHighestBridge(_ context.Context) (string, error) {
-	if api.highestBridge == nil {
-		return "", errors.New("HighestBridge is empty")
-	}
-	node := api.highestBridge.Highest()
-	if node == nil {
-		return "", errors.New("HighestBridge is empty")
-	}
-	return node.Name, nil
-}
-
-func (api *CoordinatorAPI) UnsetHighestBridge(_ context.Context) error {
-	api.highestBridge.UnsetHighest()
-	return nil
+func (api *CoordinatorAPI) GetStoppedHash(_ context.Context) (*common.Hash, error) {
+	return api.coordinator.GetStoppedHash(), nil
 }
 
 // executeAdminCommand executes an admin command and returns the result.

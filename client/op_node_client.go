@@ -23,14 +23,15 @@ func (r *OpNodeClient) SyncStatus(ctx context.Context) (*eth.SyncStatus, error) 
 	return output, err
 }
 
-func (r *OpNodeClient) SequencerStopped(ctx context.Context) (bool, error) {
-	var output bool
-	err := r.rpc.CallContext(ctx, &output, "admin_sequencerStopped")
+func (r *OpNodeClient) SequencerActive(ctx context.Context) (bool, error) {
+	var active bool
+	err := r.rpc.CallContext(ctx, &active, "admin_sequencerActive")
 	if err != nil {
-		err = r.rpc.CallContext(ctx, &output, "admin_sequencerActive")
-		return !output, err
+		var stopped bool
+		err = r.rpc.CallContext(ctx, &stopped, "admin_sequencerStopped")
+		return !stopped, err
 	}
-	return output, err
+	return active, err
 }
 
 func (r *OpNodeClient) StartSequencer(ctx context.Context, blockHash common.Hash) error {

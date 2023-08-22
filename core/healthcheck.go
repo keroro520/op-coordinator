@@ -2,32 +2,38 @@ package core
 
 import (
 	"context"
+	"github.com/ethereum/go-ethereum/log"
 	"github.com/node-real/op-coordinator/metrics"
 	"github.com/node-real/op-coordinator/types"
-	"go.uber.org/zap"
 	"sync"
 	"time"
 )
 
+type HealthChecker interface {
+	IsHealthy(nodeName string) bool
+}
+
 const CumulativeSlidingWindowSize = 5
 
-// HealthChecker is used to check the health status of nodes and record the check results in a sliding window.
+// AccHealthChecker is used to check the health status of nodes and record the check results in a sliding window.
 //
 // The size of the sliding window is 5, that is, the last 5 check results are recorded. And we judge the health status
 // of the node is obtained by the number of failures accumulated in the sliding window. If the number of failures
 // exceeds the configuration `failureThresholdLast5`, the node is considered unhealthy.
-type HealthChecker struct {
+type AccHealthChecker struct {
+	log                         log.Logger
 	windows                     map[string]*CumulativeSlidingWindow
 	interval                    time.Duration
 	cumulativeSlidingWindowSize int
 	failureThresholdLast5       int
 }
 
-func NewHealthChecker(interval time.Duration, failureThresholdLast5 int) *HealthChecker {
+func NewHealthChecker(interval time.Duration, failureThresholdLast5 int, log log.Logger) *AccHealthChecker {
 	if failureThresholdLast5 >= CumulativeSlidingWindowSize {
 		panic("failureThresholdLast5 should be less than CumulativeSlidingWindowSize")
 	}
-	return &HealthChecker{
+	return &AccHealthChecker{
+		log:                         log,
 		windows:                     make(map[string]*CumulativeSlidingWindow),
 		interval:                    interval,
 		cumulativeSlidingWindowSize: CumulativeSlidingWindowSize,
@@ -37,11 +43,11 @@ func NewHealthChecker(interval time.Duration, failureThresholdLast5 int) *Health
 
 // IsHealthy returns true if the node is healthy, its recent health check failures are equal to or less than the
 // threshold.
-func (c *HealthChecker) IsHealthy(nodeName string) bool {
+func (c *AccHealthChecker) IsHealthy(nodeName string) bool {
 	return c.windows[nodeName] != nil && c.windows[nodeName].Failures() <= c.failureThresholdLast5
 }
 
-func (c *HealthChecker) Start(ctx context.Context, nodes *map[string]*types.Node) {
+func (c *AccHealthChecker) Start(ctx context.Context, nodes *map[string]*types.Node) {
 	for nodeName, _ := range *nodes {
 		c.windows[nodeName] = NewCumulativeSlidingWindow(c.cumulativeSlidingWindowSize)
 	}
@@ -66,7 +72,7 @@ func (c *HealthChecker) Start(ctx context.Context, nodes *map[string]*types.Node
 					metrics.MetricHealthCheckTotal.WithLabelValues(node.Name).Inc()
 					if err != nil {
 						metrics.MetricHealthCheckFailures.WithLabelValues(node.Name).Inc()
-						zap.S().Errorw("Health check error", "node", nodeName, "error", err)
+						c.log.Error("Health check", "node", nodeName, "error", err)
 					}
 
 					isFailure := err != nil

@@ -118,36 +118,6 @@ RPC:
 
 - `nodeName`: the node name that requests to build a block.
 
-#### `coordinator_setHighestBridge`
-
-Sets the highest bridge node name manually.
-
-RPC:
-
-```
-{"method": "coordinator_setHighestBridge", "params": [nodeName]}
-```
-
-#### `coordinator_unsetHighestBridge`
-
-Unsets the highest bridge node name that was set manually via `coordinator_setHighestBridge` before.
-
-RPC:
-
-```
-{"method": "coordinator_unsetHighestBridge", "params": []}
-```
-
-#### `coordinator_getHighestBridge`
-
-Returns the highest bridge node name.
-
-RPC:
-
-```
-{"method": "coordinator_getHighestBridge", "params": []}
-```
-
 ### `optimism` Namespace
 
 #### `optimism_syncStatus`

@@ -3,16 +3,17 @@ package cmd
 import (
 	"context"
 	"fmt"
-	"github.com/node-real/op-coordinator/bridge"
+	oplog "github.com/ethereum-optimism/optimism/op-service/log"
+	"github.com/ethereum/go-ethereum/log"
 	config_ "github.com/node-real/op-coordinator/config"
 	"github.com/node-real/op-coordinator/core"
 	"github.com/node-real/op-coordinator/metrics"
 	"github.com/node-real/op-coordinator/rpc"
+	"github.com/node-real/op-coordinator/types"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
-	"go.uber.org/zap"
-	"go.uber.org/zap/zapcore"
 	"os"
+	"time"
 )
 
 const (
@@ -51,23 +52,36 @@ func StartCommand() *cobra.Command {
 func startHandleFunc(cmd *cobra.Command, args []string) error {
 	fmt.Printf("Start service, version is %v\n", Version)
 
-	c, err := core.NewCoordinator(config)
-	if err != nil {
-		zap.S().Error("Fail to create coordinator, error: %+v", err)
-		return err
+	// Create clients for nodes
+	var err error
+	nodes := make(map[string]*types.Node)
+	for nodeName, nodeCfg := range config.Candidates {
+		nodes[nodeName], err = types.NewNode(nodeName, nodeCfg.OpNodePublicRpcUrl, nodeCfg.OpGethPublicRpcUrl)
+		if err != nil {
+			return err
+		}
+	}
+	for nodeName, nodeCfg := range config.Bridges {
+		nodes[nodeName], err = types.NewNode(nodeName, nodeCfg.OpNodePublicRpcUrl, nodeCfg.OpGethPublicRpcUrl)
+		if err != nil {
+			return err
+		}
 	}
 
-	h, err := bridge.NewHighestBridge(config)
-	if err != nil {
-		zap.S().Error("Fail to create highest bridge, error: %+v", err)
-		return err
-	}
-	go h.Start(context.Background())
+	// Create Health Checker
+	hc := core.NewHealthChecker(
+		time.Duration(config.HealthCheck.IntervalMs)*time.Millisecond,
+		config.HealthCheck.FailureThresholdLast5,
+		logger,
+	)
+	go hc.Start(context.Background(), &nodes)
 
-	server := rpc.NewRPCServer(config, "v1.0", c, h)
+	c := core.NewCoordinator(config, hc, nodes, logger)
+
+	server := rpc.NewRPCServer(config, "v1.0", c)
 	err = server.Start()
 	if err != nil {
-		zap.S().Errorf("Fail to start rpc server, error: %v", err)
+		logger.Error("Start rpc server", "error", err)
 		return err
 	}
 
@@ -93,11 +107,10 @@ func VersionHandleFunc(cmd *cobra.Command, args []string) error {
 }
 
 var config config_.Config
+var logger log.Logger
 
 func initConfig() {
-
 	fmt.Printf("config file: %s\n", cfgFile)
-	// Use config file from the flag.
 	viper.SetConfigFile(cfgFile)
 	viper.SetConfigType("toml")
 
@@ -115,27 +128,13 @@ func initConfig() {
 		panic(fmt.Errorf("invalid config: %s", err))
 	}
 
-	err = createLogger()
-	if err != nil {
-		panic("create log error")
-	}
+	logger = createLogger(config.LogLevel)
 }
 
-func createLogger() error {
-	level, err := zapcore.ParseLevel(config.LogLevel)
-	if err != nil {
-		return err
-	}
-	productionConfig := zap.NewProductionConfig()
-	productionConfig.Level.SetLevel(level)
-
-	logger, err := productionConfig.Build()
-	if err != nil {
-		return err
-	}
-
-	_ = zap.ReplaceGlobals(logger)
-	return nil
+func createLogger(logLevel string) log.Logger {
+	logCfg := oplog.DefaultCLIConfig()
+	logCfg.Level = logLevel
+	return oplog.NewLogger(logCfg)
 }
 
 func Execute() error {

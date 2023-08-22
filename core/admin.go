@@ -47,7 +47,7 @@ func NewStopElectionCommand() StopElectionCommand {
 }
 
 func (cmd SetMasterCommand) Execute(coordinator *Coordinator) {
-	if !coordinator.isCandidate(cmd.nodeName) {
+	if !coordinator.IsCandidate(cmd.nodeName) {
 		cmd.RespCh() <- errors.New("node is not a candidate")
 		return
 	}
@@ -58,10 +58,16 @@ func (cmd SetMasterCommand) Execute(coordinator *Coordinator) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(coordinator.Config.Election.MaxWaitingTimeForConvergenceMs)*time.Millisecond)
 	defer cancel()
-	_ = coordinator.waitForConvergence(ctx)
+	WaitForNodesConvergence(coordinator.log, ctx, coordinator.HealthyCandidates())
 
-	coordinator.revokeCurrentMaster()
-	cmd.RespCh() <- coordinator.setMaster(cmd.nodeName)
+	err := coordinator.RevokeMaster()
+	if err != nil {
+		cmd.RespCh() <- err
+		return
+	}
+
+	err = coordinator.setMaster(cmd.nodeName)
+	cmd.RespCh() <- err
 }
 
 func (cmd SetMasterCommand) RespCh() chan error {
