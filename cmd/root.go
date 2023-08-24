@@ -78,7 +78,7 @@ func startHandleFunc(cmd *cobra.Command, args []string) error {
 
 	c := core.NewCoordinator(config, hc, nodes, logger)
 
-	server := rpc.NewRPCServer(config, "v1.0", c)
+	server := rpc.NewRPCServer(config, "v1.0", c, logger)
 	err = server.Start()
 	if err != nil {
 		logger.Error("Start rpc server", "error", err)

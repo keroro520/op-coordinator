@@ -2,6 +2,7 @@ package rpc
 
 import (
 	"github.com/ethereum-optimism/optimism/op-service/httputil"
+	"github.com/ethereum/go-ethereum/log"
 	"github.com/node-real/op-coordinator/config"
 	"github.com/node-real/op-coordinator/core"
 	"github.com/node-real/op-coordinator/metrics"
@@ -22,9 +23,9 @@ type RpcServer struct {
 	listenAddr net.Addr
 }
 
-func NewRPCServer(cfg config.Config, appVersion string, c *core.Coordinator) *RpcServer {
+func NewRPCServer(cfg config.Config, appVersion string, c *core.Coordinator, log log.Logger) *RpcServer {
 	endpoint := net.JoinHostPort(cfg.RPC.Host, strconv.Itoa(cfg.RPC.Port))
-	coordinatorAPI := NewCoordinatorAPI(appVersion, c)
+	coordinatorAPI := NewCoordinatorAPI(appVersion, c, log)
 	rollupAPI := NewRollupAPI(cfg, c)
 	ethAPI := NewEthAPI(c)
 	r := &RpcServer{
