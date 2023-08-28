@@ -70,11 +70,13 @@ func startHandleFunc(cmd *cobra.Command, args []string) error {
 
 	// Create Health Checker
 	hc := core.NewHealthChecker(
+		nodes,
 		time.Duration(config.HealthCheck.IntervalMs)*time.Millisecond,
 		config.HealthCheck.FailureThresholdLast5,
 		logger,
 	)
-	go hc.Start(context.Background(), &nodes)
+	go hc.Start(context.Background())
+	time.Sleep(5 * time.Duration(config.HealthCheck.IntervalMs) * time.Millisecond)
 
 	c := core.NewCoordinator(config, hc, nodes, logger)
 

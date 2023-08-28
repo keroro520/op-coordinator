@@ -22,17 +22,19 @@ const CumulativeSlidingWindowSize = 5
 // exceeds the configuration `failureThresholdLast5`, the node is considered unhealthy.
 type AccHealthChecker struct {
 	log                         log.Logger
+	nodes                       map[string]*types.Node
 	windows                     map[string]*CumulativeSlidingWindow
 	interval                    time.Duration
 	cumulativeSlidingWindowSize int
 	failureThresholdLast5       int
 }
 
-func NewHealthChecker(interval time.Duration, failureThresholdLast5 int, log log.Logger) *AccHealthChecker {
+func NewHealthChecker(nodes map[string]*types.Node, interval time.Duration, failureThresholdLast5 int, log log.Logger) *AccHealthChecker {
 	if failureThresholdLast5 >= CumulativeSlidingWindowSize {
 		panic("failureThresholdLast5 should be less than CumulativeSlidingWindowSize")
 	}
 	return &AccHealthChecker{
+		nodes:                       nodes,
 		log:                         log,
 		windows:                     make(map[string]*CumulativeSlidingWindow),
 		interval:                    interval,
@@ -47,14 +49,15 @@ func (c *AccHealthChecker) IsHealthy(nodeName string) bool {
 	return c.windows[nodeName] != nil && c.windows[nodeName].Failures() <= c.failureThresholdLast5
 }
 
-func (c *AccHealthChecker) Start(ctx context.Context, nodes *map[string]*types.Node) {
-	for nodeName, _ := range *nodes {
+func (c *AccHealthChecker) Start(ctx context.Context) {
+	nodes := c.nodes
+	for nodeName, _ := range nodes {
 		c.windows[nodeName] = NewCumulativeSlidingWindow(c.cumulativeSlidingWindowSize)
 	}
 
 	// Start gorutines for each node to run health check every c.interval independently.
 	var wg sync.WaitGroup
-	for nodeName, node := range *nodes {
+	for nodeName, node := range nodes {
 		wg.Add(1)
 		go func(nodeName string, node *types.Node, slidingWindow *CumulativeSlidingWindow) {
 			defer wg.Done()
@@ -94,7 +97,7 @@ func (c *AccHealthChecker) Start(ctx context.Context, nodes *map[string]*types.N
 			case <-ctx.Done():
 				return
 			case <-freshMetricsTicker.C:
-				for nodeName := range *nodes {
+				for nodeName := range nodes {
 					value := TRUE
 					if !c.IsHealthy(nodeName) {
 						value = FALSE
