@@ -79,6 +79,7 @@ func startHandleFunc(cmd *cobra.Command, args []string) error {
 	time.Sleep(5 * time.Duration(config.HealthCheck.IntervalMs) * time.Millisecond)
 
 	c := core.NewElection(config, hc, nodes, logger)
+	go c.Start(context.Background())
 
 	server := rpc.NewRPCServer(config, "v1.0", c, logger)
 	err = server.Start()
@@ -90,7 +91,9 @@ func startHandleFunc(cmd *cobra.Command, args []string) error {
 	metricsAddr := fmt.Sprintf("%s:%d", config.Metrics.Host, config.Metrics.Port)
 	metrics.StartMetrics(metricsAddr)
 
-	c.Start(context.Background())
+	for range time.Tick(time.Minute * 5) {
+		logger.Info("Coordinator status", "master", c.MasterName())
+	}
 
 	return nil
 }

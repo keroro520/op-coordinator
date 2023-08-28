@@ -42,6 +42,10 @@ func (c *Election) StoppedHash() *common.Hash {
 	return c.prevStoppedHash
 }
 
+func (c *Election) MasterName() string {
+	return c.master
+}
+
 func (c *Election) Master() *types.Node {
 	if c.master == "" {
 		return nil
