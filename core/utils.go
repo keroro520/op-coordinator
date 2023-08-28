@@ -8,7 +8,6 @@ import (
 
 	"github.com/ethereum-optimism/optimism/op-node/eth"
 	"github.com/ethereum/go-ethereum/log"
-	"github.com/node-real/op-coordinator/metrics"
 	"github.com/node-real/op-coordinator/types"
 )
 
@@ -73,7 +72,6 @@ func WaitForNodesConvergence(log log.Logger, ctx context.Context, nodes []*types
 	start := time.Now()
 	defer func() {
 		duration := time.Since(start)
-		metrics.MetricWaitingConvergenceDuration.Observe(float64(duration.Milliseconds()))
 		log.Info("Wait nodes to converge on the same height", "elapsed", duration)
 	}()
 
@@ -90,4 +88,13 @@ func WaitForNodesConvergence(log log.Logger, ctx context.Context, nodes []*types
 			}
 		}
 	}
+}
+
+func bool2float64(b bool) float64 {
+	const FALSE = float64(0)
+	const TRUE = float64(1)
+	if b {
+		return TRUE
+	}
+	return FALSE
 }

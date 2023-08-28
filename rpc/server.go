@@ -1,18 +1,14 @@
 package rpc
 
 import (
-	"github.com/ethereum-optimism/optimism/op-service/httputil"
 	"github.com/ethereum/go-ethereum/log"
+	"github.com/ethereum/go-ethereum/node"
+	"github.com/ethereum/go-ethereum/rpc"
 	"github.com/node-real/op-coordinator/config"
 	"github.com/node-real/op-coordinator/core"
-	"github.com/node-real/op-coordinator/metrics"
 	"net"
 	"net/http"
 	"strconv"
-	"time"
-
-	"github.com/ethereum/go-ethereum/node"
-	"github.com/ethereum/go-ethereum/rpc"
 )
 
 type RpcServer struct {
@@ -23,16 +19,16 @@ type RpcServer struct {
 	listenAddr net.Addr
 }
 
-func NewRPCServer(cfg config.Config, appVersion string, c *core.Coordinator, log log.Logger) *RpcServer {
+func NewRPCServer(cfg config.Config, appVersion string, c *core.Election, log log.Logger) *RpcServer {
 	endpoint := net.JoinHostPort(cfg.RPC.Host, strconv.Itoa(cfg.RPC.Port))
-	coordinatorAPI := NewCoordinatorAPI(appVersion, c, log)
+	electionAPI := NewElectionAPI(appVersion, c, log)
 	rollupAPI := NewRollupAPI(cfg, c)
 	ethAPI := NewEthAPI(c)
 	r := &RpcServer{
 		endpoint: endpoint,
 		apis: []rpc.API{{
 			Namespace:     "coordinator",
-			Service:       coordinatorAPI,
+			Service:       electionAPI,
 			Public:        true,
 			Authenticated: false,
 		}, {
@@ -51,25 +47,12 @@ func NewRPCServer(cfg config.Config, appVersion string, c *core.Coordinator, log
 	return r
 }
 
-func NewHTTPRecordingMiddleware(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		metrics.MetricHTTPRequests.WithLabelValues(r.Method).Inc()
-		ww := httputil.NewWrappedResponseWriter(w)
-		start := time.Now()
-		next.ServeHTTP(ww, r)
-		duration := time.Since(start)
-		metrics.MetricHTTPResponses.WithLabelValues(r.Method, strconv.Itoa(ww.StatusCode)).Inc()
-		metrics.MetricHTTPRequestDuration.WithLabelValues(r.Method, strconv.Itoa(ww.StatusCode)).Observe(float64(duration.Milliseconds()))
-	})
-}
-
 func (s *RpcServer) Start() error {
 	srv := rpc.NewServer()
 	if err := node.RegisterApis(s.apis, nil, srv); err != nil {
 		return err
 	}
 	nodeHandler := node.NewHTTPHandlerStack(srv, []string{"*"}, []string{"*"}, nil)
-	nodeHandler = NewHTTPRecordingMiddleware(nodeHandler)
 
 	mux := http.NewServeMux()
 	mux.Handle("/", nodeHandler)

@@ -14,11 +14,11 @@ import (
 	"github.com/node-real/op-coordinator/types"
 )
 
-type Coordinator struct {
+type Election struct {
 	log    log.Logger
 	Config config.Config
 
-	Master string
+	master string
 	Nodes  map[string]*types.Node
 
 	healthChecker HealthChecker
@@ -28,8 +28,8 @@ type Coordinator struct {
 	prevStoppedHash *common.Hash
 }
 
-func NewCoordinator(config config.Config, hc HealthChecker, nodes map[string]*types.Node, log log.Logger) *Coordinator {
-	return &Coordinator{
+func NewElection(config config.Config, hc HealthChecker, nodes map[string]*types.Node, log log.Logger) *Election {
+	return &Election{
 		log:           log,
 		Config:        config,
 		Nodes:         nodes,
@@ -38,35 +38,35 @@ func NewCoordinator(config config.Config, hc HealthChecker, nodes map[string]*ty
 	}
 }
 
-func (c *Coordinator) GetStoppedHash() *common.Hash {
+func (c *Election) StoppedHash() *common.Hash {
 	return c.prevStoppedHash
 }
 
-func (c *Coordinator) GetMaster() *types.Node {
-	if c.Master == "" {
+func (c *Election) Master() *types.Node {
+	if c.master == "" {
 		return nil
 	}
-	master := c.Nodes[c.Master]
+	master := c.Nodes[c.master]
 	return master
 }
 
-func (c *Coordinator) Start(ctx context.Context) {
-	c.loop(ctx)
-}
-
-func (c *Coordinator) AdminCh() chan AdminCommand {
+func (c *Election) AdminCh() chan AdminCommand {
 	return c.adminCh
 }
 
-func (c *Coordinator) IsCandidate(nodeName string) bool {
+func (c *Election) Start(ctx context.Context) {
+	c.loop(ctx)
+}
+
+func (c *Election) IsCandidate(nodeName string) bool {
 	return c.Config.Candidates[nodeName] != nil
 }
 
-func (c *Coordinator) IsHealthy(nodeName string) bool {
+func (c *Election) IsHealthy(nodeName string) bool {
 	return c.healthChecker.IsHealthy(nodeName)
 }
 
-func (c *Coordinator) HealthyCandidates() []*types.Node {
+func (c *Election) HealthyCandidates() []*types.Node {
 	healthy := make([]*types.Node, 0)
 	for _, node := range c.Nodes {
 		if c.IsCandidate(node.Name) && c.IsHealthy(node.Name) {
@@ -76,7 +76,7 @@ func (c *Coordinator) HealthyCandidates() []*types.Node {
 	return healthy
 }
 
-func (c *Coordinator) HealthyNodes() []*types.Node {
+func (c *Election) HealthyNodes() []*types.Node {
 	healthy := make([]*types.Node, 0)
 	for _, node := range c.Nodes {
 		if c.IsHealthy(node.Name) {
@@ -86,7 +86,7 @@ func (c *Coordinator) HealthyNodes() []*types.Node {
 	return healthy
 }
 
-func (c *Coordinator) loop(ctx context.Context) {
+func (c *Election) loop(ctx context.Context) {
 	lastMasterFlagCheck := time.Now()
 	ticker := time.NewTicker(50 * time.Millisecond)
 	for {
@@ -94,27 +94,38 @@ func (c *Coordinator) loop(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			if c.Config.Election.Stopped {
-				c.log.Info("Auto-election is disabled, skip", "master", c.Master)
+			// Set metrics
+			master := c.Master()
+			metrics.MetricElectionEnabled.Set(bool2float64(!c.Config.Election.Stopped))
+			metrics.MetricIsMaster.WithLabelValues("empty").Set(bool2float64(master == nil))
+			for _, node := range c.Nodes {
+				if c.IsCandidate(node.Name) {
+					isMaster := master != nil && master.Name == node.Name
+					metrics.MetricIsMaster.WithLabelValues(node.Name).Set(bool2float64(isMaster))
+				}
+			}
 
-			} else if c.GetMaster() == nil {
+			if c.Config.Election.Stopped {
+				c.log.Info("Auto-election is disabled, skip", "master", c.master)
+
+			} else if c.Master() == nil {
 				err := c.MaybeElect()
 				if err != nil {
-					c.log.Error("maybe elect", "error", err)
+					c.log.Error("Maybe elect", "error", err)
 				}
 
-			} else if c.GetMaster() != nil && !c.IsHealthy(c.Master) {
+			} else if c.Master() != nil && !c.IsHealthy(c.master) {
 				err := c.RevokeMaster()
 				if err != nil {
 					c.log.Error("Revoke master", "error", err)
 				}
 
-			} else if c.GetMaster() != nil && lastMasterFlagCheck.Add(3*time.Second).Before(time.Now()) {
+			} else if c.Master() != nil && lastMasterFlagCheck.Add(3*time.Second).Before(time.Now()) {
 				lastMasterFlagCheck = time.Now()
 				if active := c.CheckMasterIsActive(); !active {
-					c.log.Warn("Master is inactive, active it", "master", c.Master)
-					if err := c.startSequencer(c.Nodes[c.Master]); err != nil {
-						c.log.Error("start sequencer", "node", c.Master, "error", err)
+					c.log.Warn("Master is inactive, active it", "master", c.master)
+					if err := c.startSequencer(c.Nodes[c.master]); err != nil {
+						c.log.Error("start sequencer", "node", c.master, "error", err)
 					}
 				}
 			}
@@ -125,12 +136,12 @@ func (c *Coordinator) loop(ctx context.Context) {
 	}
 }
 
-// CheckSufficientHealthyNodes checks if there are sufficient healthy nodes to elect a new Master.
-func (c *Coordinator) CheckSufficientHealthyNodes() bool {
+// CheckSufficientHealthyNodes checks if there are sufficient healthy nodes to elect a new master.
+func (c *Election) CheckSufficientHealthyNodes() bool {
 	return len(c.HealthyNodes()) >= c.Config.Election.MinRequiredHealthyNodes
 }
 
-func (c *Coordinator) CheckCanonicalContainsPrevStoppedHash(node *types.Node) bool {
+func (c *Election) CheckCanonicalContainsPrevStoppedHash(node *types.Node) bool {
 	stoppedHash := c.prevStoppedHash
 	if stoppedHash == nil || *stoppedHash == (common.Hash{}) {
 		return true
@@ -140,17 +151,17 @@ func (c *Coordinator) CheckCanonicalContainsPrevStoppedHash(node *types.Node) bo
 	return err == nil && block != nil
 }
 
-func (c *Coordinator) CheckMasterIsActive() bool {
-	if c.Master == "" {
+func (c *Election) CheckMasterIsActive() bool {
+	if c.master == "" {
 		return false
 	}
 
-	master := c.Nodes[c.Master]
+	master := c.Nodes[c.master]
 	active, err := master.OpNode.SequencerActive(context.Background())
 	return err == nil && active
 }
 
-func (c *Coordinator) findExistingMaster() *types.Node {
+func (c *Election) findExistingMaster() *types.Node {
 	actives, err := FindActiveNodes(c.HealthyCandidates())
 	if err != nil {
 		return nil
@@ -164,8 +175,8 @@ func (c *Coordinator) findExistingMaster() *types.Node {
 	return canonical
 }
 
-func (c *Coordinator) MaybeElect() error {
-	if c.GetMaster() != nil {
+func (c *Election) MaybeElect() error {
+	if c.Master() != nil {
 		return nil
 	}
 
@@ -194,7 +205,7 @@ func (c *Coordinator) MaybeElect() error {
 	return nil
 }
 
-func (c *Coordinator) elect() (*types.Node, error) {
+func (c *Election) elect() (*types.Node, error) {
 	c.log.Info("Start election")
 	if existingMaster := c.findExistingMaster(); existingMaster != nil {
 		return existingMaster, nil
@@ -207,14 +218,14 @@ func (c *Coordinator) elect() (*types.Node, error) {
 	return FindCanonicalNode(c.HealthyCandidates())
 }
 
-// RevokeMaster revokes the leadership of the current Master and returns the stopped hash.
-func (c *Coordinator) RevokeMaster() error {
-	master := c.GetMaster()
+// RevokeMaster revokes the leadership of the current master and returns the stopped hash.
+func (c *Election) RevokeMaster() error {
+	master := c.Master()
 	if master == nil {
 		return nil
 	}
 
-	c.log.Warn("Revoking master", "master", c.Master)
+	c.log.Warn("Revoking master", "master", c.master)
 
 	_, err := master.OpNode.StopSequencer(context.Background())
 	if err != nil && !strings.Contains(err.Error(), "sequencer not running") {
@@ -225,7 +236,7 @@ func (c *Coordinator) RevokeMaster() error {
 	if active, err := master.OpNode.SequencerActive(context.Background()); err == nil && !active {
 		syncStatus, err := master.OpNode.SyncStatus(context.Background())
 		if err == nil && syncStatus.UnsafeL2.Hash != (common.Hash{}) {
-			c.Master = ""
+			c.master = ""
 			c.prevStoppedHash = &syncStatus.UnsafeL2.Hash
 
 			c.log.Info("Revoked master successfully", "node", master.Name, "prevStoppedHash", c.prevStoppedHash)
@@ -240,7 +251,7 @@ func (c *Coordinator) RevokeMaster() error {
 	}
 }
 
-func (c *Coordinator) setMaster(nodeName string) error {
+func (c *Election) setMaster(nodeName string) error {
 	node := c.Nodes[nodeName]
 	if node == nil {
 		return errors.New("node is not found")
@@ -248,7 +259,7 @@ func (c *Coordinator) setMaster(nodeName string) error {
 	if !c.IsCandidate(node.Name) {
 		return errors.New("node is not a candidate")
 	}
-	if c.Master == node.Name {
+	if c.master == node.Name {
 		return errors.New("node is already the master")
 	}
 
@@ -256,25 +267,14 @@ func (c *Coordinator) setMaster(nodeName string) error {
 		return err
 	}
 
-	const FALSE = float64(0)
-	const TRUE = float64(1)
-
-	if c.Master != "" && c.Master != nodeName {
-		metrics.MetricIsMaster.WithLabelValues(c.Master).Set(FALSE)
-	}
-
-	if nodeName != "" {
-		metrics.MetricIsMaster.WithLabelValues(nodeName).Set(TRUE)
-	}
-
 	c.log.Info("assign master", "node", nodeName)
-	c.Master = nodeName
+	c.master = nodeName
 	c.prevStoppedHash = nil
 
 	return nil
 }
 
-func (c *Coordinator) startSequencer(node *types.Node) error {
+func (c *Election) startSequencer(node *types.Node) error {
 	if err := node.OpNode.ResetDerivationPipeline(context.Background()); err != nil {
 		return fmt.Errorf("fail to call admin_resetDerivationPipeline, node: %s, error: %s", node.Name, err)
 	}

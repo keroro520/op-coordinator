@@ -22,7 +22,7 @@ const (
 
 var rootCmd = &cobra.Command{
 	Use:     "coordinator",
-	Short:   "coordinator CLI",
+	Short:   "coordinator",
 	Version: Version,
 }
 
@@ -78,7 +78,7 @@ func startHandleFunc(cmd *cobra.Command, args []string) error {
 	go hc.Start(context.Background())
 	time.Sleep(5 * time.Duration(config.HealthCheck.IntervalMs) * time.Millisecond)
 
-	c := core.NewCoordinator(config, hc, nodes, logger)
+	c := core.NewElection(config, hc, nodes, logger)
 
 	server := rpc.NewRPCServer(config, "v1.0", c, logger)
 	err = server.Start()

@@ -5,23 +5,23 @@ import (
 	"fmt"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/log"
-	coordinator2 "github.com/node-real/op-coordinator/core"
+	"github.com/node-real/op-coordinator/core"
 	"time"
 )
 
-// CoordinatorAPI is the API for the coordinator.
-type CoordinatorAPI struct {
-	log         log.Logger
-	version     string
-	coordinator *coordinator2.Coordinator
+// ElectionAPI is the API for the coordinator.
+type ElectionAPI struct {
+	log      log.Logger
+	version  string
+	election *core.Election
 }
 
-// NewCoordinatorAPI creates a new CoordinatorAPI instance.
-func NewCoordinatorAPI(version string, c *coordinator2.Coordinator, log log.Logger) *CoordinatorAPI {
-	return &CoordinatorAPI{log: log, version: version, coordinator: c}
+// NewElectionAPI creates a new ElectionAPI instance.
+func NewElectionAPI(version string, e *core.Election, log log.Logger) *ElectionAPI {
+	return &ElectionAPI{log: log, version: version, election: e}
 }
 
-func (api *CoordinatorAPI) Version() (string, error) {
+func (api *ElectionAPI) Version() (string, error) {
 	return api.version, nil
 }
 
@@ -31,16 +31,17 @@ func (api *CoordinatorAPI) Version() (string, error) {
 // only the master node will build new blocks, so that we enforce the data consistency.
 //
 // Note that the `nodeName` parameter should be identical to the node name in the configuration file.
-func (api *CoordinatorAPI) RequestBuildingBlock(nodeName string) error {
-	if api.coordinator.Master == "" {
+func (api *ElectionAPI) RequestBuildingBlock(nodeName string) error {
+	master := api.election.Master()
+	if master == nil {
 		return fmt.Errorf("empty master")
 	}
 
-	if api.coordinator.Master != nodeName {
+	if master.Name != nodeName {
 		go func() {
-			api.log.Warn("Invalid master is requesting!", "master", api.coordinator.Master, "node", nodeName)
+			api.log.Warn("Invalid master is requesting!", "master", master.Name, "node", nodeName)
 
-			node := api.coordinator.Nodes[nodeName]
+			node := api.election.Nodes[nodeName]
 			if node != nil && node.OpNode != nil {
 				blockHash, err := node.OpNode.StopSequencer(context.Background())
 				if err != nil {
@@ -57,24 +58,28 @@ func (api *CoordinatorAPI) RequestBuildingBlock(nodeName string) error {
 }
 
 // GetMaster returns the current master node name.
-func (api *CoordinatorAPI) GetMaster() string {
-	return api.coordinator.Master
+func (api *ElectionAPI) GetMaster() string {
+	if master := api.election.Master(); master == nil {
+		return ""
+	} else {
+		return master.Name
+	}
 }
 
 // SetMaster sets the master node name manually.
-func (api *CoordinatorAPI) SetMaster(nodeName string) error {
+func (api *ElectionAPI) SetMaster(nodeName string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 300*time.Second)
 	defer cancel()
 
-	return executeAdminCommand(ctx, api.coordinator, coordinator2.NewSetMasterCommand(nodeName))
+	return executeAdminCommand(ctx, api.election, core.NewSetMasterCommand(nodeName))
 }
 
 // StartElection enables the auto-detection and auto-election process. See StopElection for more details.
-func (api *CoordinatorAPI) StartElection() error {
+func (api *ElectionAPI) StartElection() error {
 	ctx, cancel := context.WithTimeout(context.Background(), 300*time.Second)
 	defer cancel()
 
-	return executeAdminCommand(ctx, api.coordinator, coordinator2.NewStartElectionCommand())
+	return executeAdminCommand(ctx, api.election, core.NewStartElectionCommand())
 }
 
 // StopElection disables the auto-detection and auto-election process. When the election is stopped, the master node
@@ -82,25 +87,25 @@ func (api *CoordinatorAPI) StartElection() error {
 // StartElection.
 //
 // This API is used for debugging purpose and handling accidental situations.
-func (api *CoordinatorAPI) StopElection() error {
+func (api *ElectionAPI) StopElection() error {
 	ctx, cancel := context.WithTimeout(context.Background(), 300*time.Second)
 	defer cancel()
 
-	return executeAdminCommand(ctx, api.coordinator, coordinator2.NewStopElectionCommand())
+	return executeAdminCommand(ctx, api.election, core.NewStopElectionCommand())
 }
 
 // ElectionStopped returns true if the election process is stopped.
-func (api *CoordinatorAPI) ElectionStopped() bool {
-	return api.coordinator.Config.Election.Stopped
+func (api *ElectionAPI) ElectionStopped() bool {
+	return api.election.Config.Election.Stopped
 }
 
-func (api *CoordinatorAPI) GetStoppedHash(_ context.Context) (*common.Hash, error) {
-	return api.coordinator.GetStoppedHash(), nil
+func (api *ElectionAPI) GetStoppedHash(_ context.Context) (*common.Hash, error) {
+	return api.election.StoppedHash(), nil
 }
 
 // executeAdminCommand executes an admin command and returns the result.
-func executeAdminCommand(ctx context.Context, coordinator *coordinator2.Coordinator, cmd coordinator2.AdminCommand) error {
-	coordinator.AdminCh() <- cmd
+func executeAdminCommand(ctx context.Context, election *core.Election, cmd core.AdminCommand) error {
+	election.AdminCh() <- cmd
 
 	select {
 	case <-ctx.Done():

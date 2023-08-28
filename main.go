@@ -2,13 +2,14 @@ package main
 
 import (
 	"fmt"
-	"github.com/node-real/op-coordinator/cmd"
 	"os"
+
+	"github.com/node-real/op-coordinator/cmd"
 )
 
 func main() {
 	if err := cmd.Execute(); err != nil {
-		fmt.Fprintf(os.Stderr, "coordinator-cli failed %v\n", err)
+		_, _ = fmt.Fprintf(os.Stderr, "op-coordinator failed %v\n", err)
 		os.Exit(1)
 	}
 	os.Exit(0)

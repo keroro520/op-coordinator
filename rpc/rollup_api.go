@@ -12,15 +12,15 @@ import (
 
 type RollupAPI struct {
 	config.ForwardConfig
-	coordinator *core.Coordinator
+	election *core.Election
 }
 
-func NewRollupAPI(cfg config.Config, coordinator *core.Coordinator) *RollupAPI {
-	return &RollupAPI{ForwardConfig: cfg.Forward, coordinator: coordinator}
+func NewRollupAPI(cfg config.Config, e *core.Election) *RollupAPI {
+	return &RollupAPI{ForwardConfig: cfg.Forward, election: e}
 }
 
 func (api *RollupAPI) SyncStatus(ctx context.Context) (*eth.SyncStatus, error) {
-	forwarder := api.coordinator.GetMaster()
+	forwarder := api.election.Master()
 	if forwarder == nil {
 		return nil, errors.New("forwarder is unavailable")
 	}
@@ -51,7 +51,7 @@ func (api *RollupAPI) Version(ctx context.Context) (*json.RawMessage, error) {
 }
 
 func (api *RollupAPI) callContext(ctx context.Context, method string, args ...interface{}) (*json.RawMessage, error) {
-	forwarder := api.coordinator.GetMaster()
+	forwarder := api.election.Master()
 	if forwarder == nil {
 		return nil, errors.New("forwarder is unavailable")
 	}

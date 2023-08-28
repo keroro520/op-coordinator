@@ -16,7 +16,7 @@ import (
 	"time"
 )
 
-func defaultCoordinator(t *testing.T, sysCfg op_e2e.SystemConfig, sys *op_e2e.System, log log.Logger) *core.Coordinator {
+func defaultElection(t *testing.T, sysCfg op_e2e.SystemConfig, sys *op_e2e.System, log log.Logger) *core.Election {
 	candidatesCfg := make(map[string]*config.NodeConfig)
 	candidateNodes := make(map[string]*types.Node)
 	bridgesCfg := make(map[string]*config.NodeConfig)
@@ -48,7 +48,7 @@ func defaultCoordinator(t *testing.T, sysCfg op_e2e.SystemConfig, sys *op_e2e.Sy
 	}
 
 	hc := core.NewHealthChecker(candidateNodes, time.Duration(coordCfg.HealthCheck.IntervalMs)*time.Millisecond, coordCfg.HealthCheck.FailureThresholdLast5, log)
-	coord := core.NewCoordinator(coordCfg, hc, candidateNodes, log)
+	coord := core.NewElection(coordCfg, hc, candidateNodes, log)
 	go hc.Start(context.Background())
 
 	return coord
@@ -94,16 +94,16 @@ func TestSingleSequencerStopSequencerExpectEmptyLeader(t *testing.T) {
 	require.Nil(t, err, "Error starting up system")
 	defer sys.Close()
 
-	coord := defaultCoordinator(t, cfg, sys, log)
+	coord := defaultElection(t, cfg, sys, log)
 	require.Nil(t, utils.WaitFor(context.Background(), 1*time.Second, func() (bool, error) {
 		return coord.IsHealthy("sequencer"), nil
 	}))
 	require.True(t, coord.IsHealthy("sequencer"))
-	require.Nil(t, coord.GetMaster())
+	require.Nil(t, coord.Master())
 	require.Nil(t, coord.MaybeElect())
-	require.NotNil(t, coord.GetMaster())
-	require.Equal(t, coord.GetMaster().Name, "sequencer")
-	require.Nil(t, coord.GetStoppedHash())
+	require.NotNil(t, coord.Master())
+	require.Equal(t, coord.Master().Name, "sequencer")
+	require.Nil(t, coord.StoppedHash())
 
 	// Stop OP Node of sequencer, expect empty leader even if re-elect because
 	require.Nil(t, sys.RollupNodes["sequencer"].Close())
@@ -111,11 +111,11 @@ func TestSingleSequencerStopSequencerExpectEmptyLeader(t *testing.T) {
 		return !coord.IsHealthy("sequencer"), nil
 	}))
 	require.Nil(t, coord.RevokeMaster())
-	require.NotNil(t, coord.GetStoppedHash())
-	require.Nil(t, coord.GetMaster())
+	require.NotNil(t, coord.StoppedHash())
+	require.Nil(t, coord.Master())
 	require.NotNil(t, coord.MaybeElect())
-	require.Nil(t, coord.GetMaster())
-	require.NotNil(t, coord.GetStoppedHash())
+	require.Nil(t, coord.Master())
+	require.NotNil(t, coord.StoppedHash())
 }
 
 func TestMultipleSequencersStopSequencerExpectEmptyLeaderIfPrevStoppedHashNotIncluded(t *testing.T) {
@@ -127,16 +127,16 @@ func TestMultipleSequencersStopSequencerExpectEmptyLeaderIfPrevStoppedHashNotInc
 	require.Nil(t, err, "Error starting up system")
 	defer sys.Close()
 
-	coord := defaultCoordinator(t, cfg, sys, log)
+	coord := defaultElection(t, cfg, sys, log)
 	require.Nil(t, utils.WaitFor(context.Background(), 1*time.Second, func() (bool, error) {
 		return coord.IsHealthy("sequencer"), nil
 	}))
 	require.True(t, coord.IsHealthy("sequencer"))
-	require.Nil(t, coord.GetMaster())
+	require.Nil(t, coord.Master())
 	require.Nil(t, coord.MaybeElect())
-	require.NotNil(t, coord.GetMaster())
-	require.Equal(t, coord.GetMaster().Name, "sequencer")
-	require.Nil(t, coord.GetStoppedHash())
+	require.NotNil(t, coord.Master())
+	require.Equal(t, coord.Master().Name, "sequencer")
+	require.Nil(t, coord.StoppedHash())
 
 	// Stop OP Node of sequencer, expect empty leader even if re-elect, because candidates prev stopped hash not included
 	require.Nil(t, sys.RollupNodes["sequencer"].Close())
@@ -145,10 +145,10 @@ func TestMultipleSequencersStopSequencerExpectEmptyLeaderIfPrevStoppedHashNotInc
 	}))
 	require.False(t, coord.IsHealthy("sequencer"))
 	require.Nil(t, coord.RevokeMaster())
-	require.NotNil(t, coord.GetStoppedHash())
-	require.Nil(t, coord.GetMaster())
+	require.NotNil(t, coord.StoppedHash())
+	require.Nil(t, coord.Master())
 	require.ErrorContains(t, coord.MaybeElect(), "canonical does not contains prev stopped hash")
-	require.Nil(t, coord.GetMaster())
+	require.Nil(t, coord.Master())
 }
 
 func TestMultipleConnectedSequencers(t *testing.T) {
@@ -160,16 +160,16 @@ func TestMultipleConnectedSequencers(t *testing.T) {
 	require.Nil(t, err, "Error starting up system")
 	defer sys.Close()
 
-	coord := defaultCoordinator(t, cfg, sys, log)
+	coord := defaultElection(t, cfg, sys, log)
 	require.Nil(t, utils.WaitFor(context.Background(), 1*time.Second, func() (bool, error) {
 		return coord.IsHealthy("sequencer"), nil
 	}))
 	require.True(t, coord.IsHealthy("sequencer"))
-	require.Nil(t, coord.GetMaster())
+	require.Nil(t, coord.Master())
 	require.Nil(t, coord.MaybeElect())
-	require.NotNil(t, coord.GetMaster())
-	require.Equal(t, coord.GetMaster().Name, "sequencer")
-	require.Nil(t, coord.GetStoppedHash())
+	require.NotNil(t, coord.Master())
+	require.Equal(t, coord.Master().Name, "sequencer")
+	require.Nil(t, coord.StoppedHash())
 
 	// Stop OP Node of sequencer If nodes are already converged
 	ctx, ctxCancel := context.WithTimeout(context.Background(), time.Duration(10)*time.Second)
@@ -181,12 +181,12 @@ func TestMultipleConnectedSequencers(t *testing.T) {
 	}))
 	require.False(t, coord.IsHealthy("sequencer"))
 	require.Nil(t, coord.RevokeMaster())
-	require.NotNil(t, coord.GetStoppedHash())
-	require.Nil(t, coord.GetMaster())
+	require.NotNil(t, coord.StoppedHash())
+	require.Nil(t, coord.Master())
 
 	require.Nil(t, coord.MaybeElect())
-	require.NotNil(t, coord.GetMaster())
-	require.Equal(t, coord.GetMaster().Name, "sequencer2")
+	require.NotNil(t, coord.Master())
+	require.Equal(t, coord.Master().Name, "sequencer2")
 }
 
 func TestMultipleConnectedSequencers2(t *testing.T) {
@@ -198,16 +198,16 @@ func TestMultipleConnectedSequencers2(t *testing.T) {
 	require.Nil(t, err, "Error starting up system")
 	defer sys.Close()
 
-	coord := defaultCoordinator(t, cfg, sys, log)
+	coord := defaultElection(t, cfg, sys, log)
 	require.Nil(t, utils.WaitFor(context.Background(), 1*time.Second, func() (bool, error) {
 		return coord.IsHealthy("sequencer"), nil
 	}))
 	require.True(t, coord.IsHealthy("sequencer"))
-	require.Nil(t, coord.GetMaster())
+	require.Nil(t, coord.Master())
 	require.Nil(t, coord.MaybeElect())
-	require.NotNil(t, coord.GetMaster())
-	require.Equal(t, coord.GetMaster().Name, "sequencer")
-	require.Nil(t, coord.GetStoppedHash())
+	require.NotNil(t, coord.Master())
+	require.Equal(t, coord.Master().Name, "sequencer")
+	require.Nil(t, coord.StoppedHash())
 
 	// Stop OP Node of sequencer If nodes are already converged
 	ctx, ctxCancel := context.WithTimeout(context.Background(), time.Duration(10)*time.Second)
@@ -219,12 +219,12 @@ func TestMultipleConnectedSequencers2(t *testing.T) {
 	}))
 	require.False(t, coord.IsHealthy("sequencer"))
 	require.Nil(t, coord.RevokeMaster())
-	require.NotNil(t, coord.GetStoppedHash())
-	require.Nil(t, coord.GetMaster())
+	require.NotNil(t, coord.StoppedHash())
+	require.Nil(t, coord.Master())
 
 	require.Nil(t, coord.MaybeElect())
-	require.NotNil(t, coord.GetMaster())
-	require.Equal(t, coord.GetMaster().Name, "sequencer2")
+	require.NotNil(t, coord.Master())
+	require.Equal(t, coord.Master().Name, "sequencer2")
 
 	// wait some blocks mined by follower
 	time.Sleep(10 * time.Second)

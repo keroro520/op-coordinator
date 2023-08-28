@@ -51,7 +51,7 @@ func (c *AccHealthChecker) IsHealthy(nodeName string) bool {
 
 func (c *AccHealthChecker) Start(ctx context.Context) {
 	nodes := c.nodes
-	for nodeName, _ := range nodes {
+	for nodeName := range nodes {
 		c.windows[nodeName] = NewCumulativeSlidingWindow(c.cumulativeSlidingWindowSize)
 	}
 
@@ -72,9 +72,7 @@ func (c *AccHealthChecker) Start(ctx context.Context) {
 						err = healthcheckOpNode(context.Background(), node)
 					}
 
-					metrics.MetricHealthCheckTotal.WithLabelValues(node.Name).Inc()
 					if err != nil {
-						metrics.MetricHealthCheckFailures.WithLabelValues(node.Name).Inc()
 						c.log.Error("Health check", "node", nodeName, "error", err)
 					}
 
@@ -164,7 +162,11 @@ func healthcheckOpGeth(ctx context.Context, node *types.Node) error {
 	start := time.Now()
 	_, err := node.OpGeth.HeaderByNumber(ctx, nil)
 	duration := time.Since(start)
-	metrics.MetricHealthCheckOpGethDuration.WithLabelValues(node.Name).Observe(float64(duration.Milliseconds()))
+	if err != nil {
+		metrics.MetricHealthCheckOpGethFailureDuration.WithLabelValues(node.Name).Observe(float64(duration.Milliseconds()))
+	} else {
+		metrics.MetricHealthCheckOpGethSuccessDuration.WithLabelValues(node.Name).Observe(float64(duration.Milliseconds()))
+	}
 	return err
 }
 
@@ -172,6 +174,11 @@ func healthcheckOpNode(ctx context.Context, node *types.Node) error {
 	start := time.Now()
 	_, err := node.OpNode.SyncStatus(ctx)
 	duration := time.Since(start)
-	metrics.MetricHealthCheckOpNodeDuration.WithLabelValues(node.Name).Observe(float64(duration.Milliseconds()))
+
+	if err != nil {
+		metrics.MetricHealthCheckOpNodeFailureDuration.WithLabelValues(node.Name).Observe(float64(duration.Milliseconds()))
+	} else {
+		metrics.MetricHealthCheckOpNodeSuccessDuration.WithLabelValues(node.Name).Observe(float64(duration.Milliseconds()))
+	}
 	return err
 }

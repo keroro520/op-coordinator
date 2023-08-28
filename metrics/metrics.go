@@ -13,88 +13,51 @@ var (
 )
 
 var (
-	MetricElections = promauto.NewCounter(prometheus.CounterOpts{
+	MetricElectionEnabled = promauto.NewGauge(prometheus.GaugeOpts{
 		Namespace: Namespace,
 		Subsystem: Subsystem,
-		Name:      "elections_count_total",
-		Help:      "Tracks total elections",
+		Name:      "elections_enabled",
+		Help:      "Indicates whether elections are enabled",
 	})
-	MetricElectionFailures = promauto.NewCounter(prometheus.CounterOpts{
-		Namespace: Namespace,
-		Subsystem: Subsystem,
-		Name:      "election_failures_count_total",
-		Help:      "Tracks total election failures",
-	})
-	MetricElectionDuration = promauto.NewHistogram(prometheus.HistogramOpts{
-		Namespace: Namespace,
-		Subsystem: Subsystem,
-		Name:      "election_duration_ms",
-		Buckets:   prometheus.DefBuckets,
-		Help:      "Tracks election duration in milliseconds",
-	})
-	MetricWaitingConvergenceDuration = promauto.NewHistogram(prometheus.HistogramOpts{
-		Namespace: Namespace,
-		Subsystem: Subsystem,
-		Name:      "waiting_convergence_duration_ms",
-		Buckets:   prometheus.DefBuckets,
-		Help:      "Tracks waiting convergence duration in milliseconds",
-	})
+
 	MetricIsMaster = promauto.NewGaugeVec(prometheus.GaugeOpts{
 		Namespace: Namespace,
 		Subsystem: Subsystem,
-		Name:      "is_master",
-		Help:      "Tracks whether the node is master",
+		Name:      "elections_is_master",
+		Help:      "Tracks total elections",
 	}, []string{"node"})
+
 	MetricIsHealthy = promauto.NewGaugeVec(prometheus.GaugeOpts{
 		Namespace: Namespace,
 		Subsystem: Subsystem,
 		Name:      "is_healthy",
 		Help:      "Tracks whether the node is healthy",
 	}, []string{"node"})
-	MetricHealthCheckTotal = promauto.NewCounterVec(prometheus.CounterOpts{
-		Namespace: Namespace,
-		Subsystem: Subsystem,
-		Name:      "hc_count_total",
-		Help:      "Tracks total health check",
-	}, []string{"node"})
-	MetricHealthCheckFailures = promauto.NewCounterVec(prometheus.CounterOpts{
-		Namespace: Namespace,
-		Subsystem: Subsystem,
-		Name:      "hc_failures_count",
-		Help:      "Tracks health check failures",
-	}, []string{"node"})
-	MetricHealthCheckOpNodeDuration = promauto.NewHistogramVec(prometheus.HistogramOpts{
-		Namespace: Namespace,
-		Subsystem: Subsystem,
-		Name:      "hc_op_node_duration_ms",
-		Buckets:   prometheus.DefBuckets,
-	}, []string{"node"})
-	MetricHealthCheckOpGethDuration = promauto.NewHistogramVec(prometheus.HistogramOpts{
-		Namespace: Namespace,
-		Subsystem: Subsystem,
-		Name:      "hc_op_geth_duration_ms",
-		Buckets:   prometheus.DefBuckets,
-	}, []string{"node"})
 
-	MetricHTTPRequestDuration = promauto.NewHistogramVec(prometheus.HistogramOpts{
+	MetricHealthCheckOpNodeSuccessDuration = promauto.NewHistogramVec(prometheus.HistogramOpts{
 		Namespace: Namespace,
 		Subsystem: Subsystem,
-		Name:      "http_request_duration_ms",
-		Help:      "Tracks HTTP request durations, in ms",
+		Name:      "hc_op_node_success_duration_ms",
 		Buckets:   prometheus.DefBuckets,
-	}, []string{"method", "status_code"})
-	MetricHTTPRequests = promauto.NewCounterVec(prometheus.CounterOpts{
+	}, []string{"node"})
+	MetricHealthCheckOpNodeFailureDuration = promauto.NewHistogramVec(prometheus.HistogramOpts{
 		Namespace: Namespace,
 		Subsystem: Subsystem,
-		Name:      "http_requests_count_total",
-		Help:      "Tracks total HTTP requests",
-	}, []string{"method"})
-	MetricHTTPResponses = promauto.NewCounterVec(prometheus.CounterOpts{
+		Name:      "hc_op_node_failure_duration_ms",
+		Buckets:   prometheus.DefBuckets,
+	}, []string{"node"})
+	MetricHealthCheckOpGethSuccessDuration = promauto.NewHistogramVec(prometheus.HistogramOpts{
 		Namespace: Namespace,
 		Subsystem: Subsystem,
-		Name:      "http_responses_count_total",
-		Help:      "Tracks total HTTP responses",
-	}, []string{"method", "status_code"})
+		Name:      "hc_op_geth_success_duration_ms",
+		Buckets:   prometheus.DefBuckets,
+	}, []string{"node"})
+	MetricHealthCheckOpGethFailureDuration = promauto.NewHistogramVec(prometheus.HistogramOpts{
+		Namespace: Namespace,
+		Subsystem: Subsystem,
+		Name:      "hc_op_geth_failure_duration_ms",
+		Buckets:   prometheus.DefBuckets,
+	}, []string{"node"})
 )
 
 func StartMetrics(addr string) {

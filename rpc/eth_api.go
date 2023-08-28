@@ -9,18 +9,18 @@ import (
 )
 
 type EthAPI struct {
-	coordinator *core.Coordinator
+	election *core.Election
 }
 
-func NewEthAPI(coordinator *core.Coordinator) *EthAPI {
-	return &EthAPI{coordinator: coordinator}
+func NewEthAPI(election *core.Election) *EthAPI {
+	return &EthAPI{election: election}
 }
 
 // GetBlockByNumber Returns information of the block matching the given block number from the _leader sequencer_.
 //
 // This API is similar to the RPC `eth_getBlockByNumber` in go-ethereum.
 func (api *EthAPI) GetBlockByNumber(ctx context.Context, number rpc.BlockNumber, _detail bool) (*json.RawMessage, error) {
-	forwarder := api.coordinator.GetMaster()
+	forwarder := api.election.Master()
 	if forwarder == nil {
 		return nil, errors.New("forwarder is unavailable")
 	}
