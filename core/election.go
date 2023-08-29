@@ -251,7 +251,7 @@ func (c *Election) RevokeMaster() error {
 			return fmt.Errorf("fail to call optimism_syncStatus, node: %s, error: zero hash unsafe l2", master.Name)
 		}
 	} else {
-		return fmt.Errorf("fail to call admin_sequencerActive, node: %s, active: %s, error: %s", master.Name, active, err)
+		return fmt.Errorf("fail to call admin_sequencerActive, node: %s, active: %v, error: %s", master.Name, active, err)
 	}
 }
 

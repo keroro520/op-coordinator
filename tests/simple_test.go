@@ -16,7 +16,10 @@ import (
 	"time"
 )
 
-func defaultElection(t *testing.T, sysCfg op_e2e.SystemConfig, sys *op_e2e.System, log log.Logger) *core.Election {
+const HealthCheckInterval = 1000 * time.Millisecond
+const HealthCheckFailureThresholdLast5 = 1
+
+func defaultElection(t *testing.T, sysCfg op_e2e.SystemConfig, sys *op_e2e.System, log log.Logger) (*core.Election, *MockHealthChecker) {
 	candidatesCfg := make(map[string]*config.NodeConfig)
 	candidateNodes := make(map[string]*types.Node)
 	bridgesCfg := make(map[string]*config.NodeConfig)
@@ -37,8 +40,8 @@ func defaultElection(t *testing.T, sysCfg op_e2e.SystemConfig, sys *op_e2e.Syste
 		Candidates: candidatesCfg,
 		Bridges:    bridgesCfg,
 		HealthCheck: config.HealthCheckConfig{
-			IntervalMs:            1000,
-			FailureThresholdLast5: 1,
+			IntervalMs:            HealthCheckInterval.Milliseconds(),
+			FailureThresholdLast5: HealthCheckFailureThresholdLast5,
 		},
 		Election: config.ElectionConfig{
 			Stopped:                        false,
@@ -47,11 +50,23 @@ func defaultElection(t *testing.T, sysCfg op_e2e.SystemConfig, sys *op_e2e.Syste
 		},
 	}
 
-	hc := core.NewHealthChecker(candidateNodes, time.Duration(coordCfg.HealthCheck.IntervalMs)*time.Millisecond, coordCfg.HealthCheck.FailureThresholdLast5, log)
-	coord := core.NewElection(coordCfg, hc, candidateNodes, log)
-	go hc.Start(context.Background())
+	hc := MockHealthChecker{healthyNodes: make(map[string]bool)}
+	coord := core.NewElection(coordCfg, &hc, candidateNodes, log)
 
-	return coord
+	return coord, &hc
+}
+
+type MockHealthChecker struct {
+	healthyNodes map[string]bool
+}
+
+func (hc *MockHealthChecker) IsHealthy(nodeName string) bool {
+	healthy, ok := hc.healthyNodes[nodeName]
+	if !ok {
+		return true
+	} else {
+		return healthy
+	}
 }
 
 func addSequencer(t *testing.T, cfg op_e2e.SystemConfig, seqName string, p2pStaticPeers ...string) {
@@ -80,9 +95,16 @@ func addSequencer(t *testing.T, cfg op_e2e.SystemConfig, seqName string, p2pStat
 			cfg.P2PTopology = make(map[string][]string)
 		}
 
-		cfg.P2PTopology[seqName] = make([]string, 0)
+		if cfg.P2PTopology[seqName] == nil {
+			cfg.P2PTopology[seqName] = make([]string, 0)
+		}
 		for _, peer := range p2pStaticPeers {
 			cfg.P2PTopology[seqName] = append(cfg.P2PTopology[seqName], peer)
+
+			if cfg.P2PTopology[peer] == nil {
+				cfg.P2PTopology[peer] = make([]string, 0)
+			}
+			cfg.P2PTopology[peer] = append(cfg.P2PTopology[peer], seqName)
 		}
 	}
 }
@@ -90,151 +112,124 @@ func addSequencer(t *testing.T, cfg op_e2e.SystemConfig, seqName string, p2pStat
 func TestSingleSequencerStopSequencerExpectEmptyLeader(t *testing.T) {
 	log := testlog.Logger(t, log.LvlInfo)
 	cfg := op_e2e.DefaultSystemConfig(t)
+	cfg.DisableBatcher = true
 	sys, err := cfg.Start()
 	require.Nil(t, err, "Error starting up system")
 	defer sys.Close()
 
-	coord := defaultElection(t, cfg, sys, log)
+	coord, hc := defaultElection(t, cfg, sys, log)
 	require.Nil(t, utils.WaitFor(context.Background(), 1*time.Second, func() (bool, error) {
 		return coord.IsHealthy("sequencer"), nil
 	}))
 	require.True(t, coord.IsHealthy("sequencer"))
-	require.Nil(t, coord.Master())
-	require.Nil(t, coord.MaybeElect())
-	require.NotNil(t, coord.Master())
-	require.Equal(t, coord.Master().Name, "sequencer")
+	require.Nil(t, coord.Master(), "Expect no master before election")
+
+	err = coord.MaybeElect()
+	require.Nil(t, err, "Expect election success")
+	require.Equal(t, coord.MasterName(), "sequencer", "Expect sequencer to be master")
 	require.Nil(t, coord.StoppedHash())
 
-	// Stop OP Node of sequencer, expect empty leader even if re-elect because
-	require.Nil(t, sys.RollupNodes["sequencer"].Close())
+	becomeUnhealthy(hc, "sequencer")
 	require.Nil(t, utils.WaitFor(context.Background(), 1*time.Second, func() (bool, error) {
 		return !coord.IsHealthy("sequencer"), nil
 	}))
-	require.Nil(t, coord.RevokeMaster())
+
+	require.Nil(t, coord.RevokeMaster(), "Expect master revoked")
+	require.Nil(t, coord.Master(), "Expect no master after revoke")
 	require.NotNil(t, coord.StoppedHash())
-	require.Nil(t, coord.Master())
-	require.NotNil(t, coord.MaybeElect())
-	require.Nil(t, coord.Master())
+
+	err = coord.MaybeElect()
+	require.NotNil(t, err, "Expect election failed")
+	require.Nil(t, coord.Master(), "Expect no master after election failed")
 	require.NotNil(t, coord.StoppedHash())
 }
 
 func TestMultipleSequencersStopSequencerExpectEmptyLeaderIfPrevStoppedHashNotIncluded(t *testing.T) {
 	log := testlog.Logger(t, log.LvlInfo)
 	cfg := op_e2e.DefaultSystemConfig(t)
+	cfg.DisableBatcher = true
 	addSequencer(t, cfg, "sequencer2")
 
 	sys, err := cfg.Start()
 	require.Nil(t, err, "Error starting up system")
 	defer sys.Close()
 
-	coord := defaultElection(t, cfg, sys, log)
+	coord, hc := defaultElection(t, cfg, sys, log)
 	require.Nil(t, utils.WaitFor(context.Background(), 1*time.Second, func() (bool, error) {
-		return coord.IsHealthy("sequencer"), nil
+		return coord.IsHealthy("sequencer") && coord.IsHealthy("sequencer2"), nil
 	}))
-	require.True(t, coord.IsHealthy("sequencer"))
+	require.True(t, coord.IsHealthy("sequencer") && coord.IsHealthy("sequencer2"))
 	require.Nil(t, coord.Master())
-	require.Nil(t, coord.MaybeElect())
-	require.NotNil(t, coord.Master())
-	require.Equal(t, coord.Master().Name, "sequencer")
+
+	err = coord.MaybeElect()
+	require.Nil(t, err, "Expect election success")
+	require.Equal(t, coord.MasterName(), "sequencer")
 	require.Nil(t, coord.StoppedHash())
 
-	// Stop OP Node of sequencer, expect empty leader even if re-elect, because candidates prev stopped hash not included
-	require.Nil(t, sys.RollupNodes["sequencer"].Close())
+	becomeUnhealthy(hc, "sequencer")
 	require.Nil(t, utils.WaitFor(context.Background(), 1*time.Second, func() (bool, error) {
-		return !coord.IsHealthy("sequencer"), nil
+		return !coord.IsHealthy("sequencer") && coord.IsHealthy("sequencer2"), nil
 	}))
-	require.False(t, coord.IsHealthy("sequencer"))
-	require.Nil(t, coord.RevokeMaster())
+	require.True(t, !coord.IsHealthy("sequencer") && coord.IsHealthy("sequencer2"))
+
+	err = coord.RevokeMaster()
+	require.Nil(t, err, "Expect master revoked as it is stopped")
 	require.NotNil(t, coord.StoppedHash())
-	require.Nil(t, coord.Master())
-	require.ErrorContains(t, coord.MaybeElect(), "canonical does not contains prev stopped hash")
+	require.Nil(t, coord.Master(), "Expect no master after revoke")
+
+	err = coord.MaybeElect()
+	require.ErrorContains(t, err, "canonical does not contains prev stopped hash")
 	require.Nil(t, coord.Master())
 }
 
 func TestMultipleConnectedSequencers(t *testing.T) {
 	log := testlog.Logger(t, log.LvlInfo)
 	cfg := op_e2e.DefaultSystemConfig(t)
+	cfg.DisableBatcher = true
 	addSequencer(t, cfg, "sequencer2", "sequencer")
 
 	sys, err := cfg.Start()
 	require.Nil(t, err, "Error starting up system")
 	defer sys.Close()
 
-	coord := defaultElection(t, cfg, sys, log)
+	coord, hc := defaultElection(t, cfg, sys, log)
 	require.Nil(t, utils.WaitFor(context.Background(), 1*time.Second, func() (bool, error) {
 		return coord.IsHealthy("sequencer"), nil
 	}))
 	require.True(t, coord.IsHealthy("sequencer"))
-	require.Nil(t, coord.Master())
-	require.Nil(t, coord.MaybeElect())
-	require.NotNil(t, coord.Master())
-	require.Equal(t, coord.Master().Name, "sequencer")
+	require.Nil(t, coord.Master(), "Expect no master before election")
+
+	err = coord.MaybeElect()
+	require.Nil(t, err, "Expect election success")
+	require.Equal(t, coord.MasterName(), "sequencer", "Expect sequencer to be master")
 	require.Nil(t, coord.StoppedHash())
 
-	// Stop OP Node of sequencer If nodes are already converged
 	ctx, ctxCancel := context.WithTimeout(context.Background(), time.Duration(10)*time.Second)
 	defer ctxCancel()
 	require.True(t, core.WaitForNodesConvergence(log, ctx, coord.HealthyCandidates()))
-	require.Nil(t, sys.RollupNodes["sequencer"].Close())
+
+	becomeUnhealthy(hc, "sequencer")
 	require.Nil(t, utils.WaitFor(context.Background(), 1*time.Second, func() (bool, error) {
-		return !coord.IsHealthy("sequencer"), nil
+		return !coord.IsHealthy("sequencer") && coord.IsHealthy("sequencer2"), nil
 	}))
-	require.False(t, coord.IsHealthy("sequencer"))
-	require.Nil(t, coord.RevokeMaster())
+	require.True(t, !coord.IsHealthy("sequencer") && coord.IsHealthy("sequencer2"))
+
+	err = coord.RevokeMaster()
+	require.Nil(t, err, "Expect master revoked as it is stopped")
 	require.NotNil(t, coord.StoppedHash())
 	require.Nil(t, coord.Master())
 
-	require.Nil(t, coord.MaybeElect())
-	require.NotNil(t, coord.Master())
-	require.Equal(t, coord.Master().Name, "sequencer2")
+	time.Sleep(3 * time.Second)
+
+	err = coord.MaybeElect()
+	require.Nil(t, err, "Expect election success")
+	require.Equal(t, coord.MasterName(), "sequencer2", "Expect sequencer2 to be master")
 }
 
-func TestMultipleConnectedSequencers2(t *testing.T) {
-	log := testlog.Logger(t, log.LvlInfo)
-	cfg := op_e2e.DefaultSystemConfig(t)
-	addSequencer(t, cfg, "sequencer2", "sequencer")
+func becomeUnhealthy(hc *MockHealthChecker, nodeName string) {
+	hc.healthyNodes[nodeName] = false
+}
 
-	sys, err := cfg.Start()
-	require.Nil(t, err, "Error starting up system")
-	defer sys.Close()
-
-	coord := defaultElection(t, cfg, sys, log)
-	require.Nil(t, utils.WaitFor(context.Background(), 1*time.Second, func() (bool, error) {
-		return coord.IsHealthy("sequencer"), nil
-	}))
-	require.True(t, coord.IsHealthy("sequencer"))
-	require.Nil(t, coord.Master())
-	require.Nil(t, coord.MaybeElect())
-	require.NotNil(t, coord.Master())
-	require.Equal(t, coord.Master().Name, "sequencer")
-	require.Nil(t, coord.StoppedHash())
-
-	// Stop OP Node of sequencer If nodes are already converged
-	ctx, ctxCancel := context.WithTimeout(context.Background(), time.Duration(10)*time.Second)
-	defer ctxCancel()
-	require.True(t, core.WaitForNodesConvergence(log, ctx, coord.HealthyNodes()))
-	require.Nil(t, sys.RollupNodes["sequencer"].Close())
-	require.Nil(t, utils.WaitFor(context.Background(), 1*time.Second, func() (bool, error) {
-		return !coord.IsHealthy("sequencer"), nil
-	}))
-	require.False(t, coord.IsHealthy("sequencer"))
-	require.Nil(t, coord.RevokeMaster())
-	require.NotNil(t, coord.StoppedHash())
-	require.Nil(t, coord.Master())
-
-	require.Nil(t, coord.MaybeElect())
-	require.NotNil(t, coord.Master())
-	require.Equal(t, coord.Master().Name, "sequencer2")
-
-	// wait some blocks mined by follower
-	time.Sleep(10 * time.Second)
-
-	// FIXME: Currently OP Node is not supported to restart yet
-	// Restart sequencer
-	// require.Nil(t, sys.RollupNodes["sequencer"].Start(context.Background()))
-
-	//// Expect sequencer re-sync to follower after starting
-	//ctx2, ctxCancel2 := context.WithTimeout(context.Background(), time.Duration(10)*time.Second)
-	//defer ctxCancel2()
-	//require.True(t, core.WaitForNodesConvergence(log, ctx2, candidates))
+func becomeHealthy(hc *MockHealthChecker, nodeName string) {
+	hc.healthyNodes[nodeName] = true
 }

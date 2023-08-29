@@ -19,11 +19,11 @@ type Node struct {
 }
 
 func NewNode(nodeName string, opNodeUrl string, opGethUrl string) (*Node, error) {
-	opNode, opNodeRPC, err := dialOpNodeClientWithTimeout(context.Background(), opNodeUrl)
+	opNode, opNodeRPC, err := DialOpNodeClientWithTimeout(context.Background(), opNodeUrl)
 	if err != nil {
 		return nil, fmt.Errorf("dial OpNode error, nodeName: %s, OpNodeUrl: %s, error: %v", nodeName, opNodeUrl, err)
 	}
-	opGeth, opGethRPC, err := dialEthClientWithTimeout(context.Background(), opGethUrl)
+	opGeth, opGethRPC, err := DialEthClientWithTimeout(context.Background(), opGethUrl)
 	if err != nil {
 		return nil, fmt.Errorf("dial OpGeth error, nodeName: %s, OpGethUrl: %s, error: %v", nodeName, opGethUrl, err)
 	}
@@ -43,10 +43,10 @@ const (
 	defaultDialTimeout = 5 * time.Second
 )
 
-// dialEthClientWithTimeout attempts to dial the L1 provider using the provided
+// DialEthClientWithTimeout attempts to dial the L1 provider using the provided
 // URL. If the dial doesn't complete within defaultDialTimeout seconds, this
 // method will return an error.
-func dialEthClientWithTimeout(ctx context.Context, url string) (*ethclient.Client, *rpc.Client, error) {
+func DialEthClientWithTimeout(ctx context.Context, url string) (*ethclient.Client, *rpc.Client, error) {
 	ctx, cancel := context.WithTimeout(ctx, defaultDialTimeout)
 	defer cancel()
 
@@ -58,10 +58,10 @@ func dialEthClientWithTimeout(ctx context.Context, url string) (*ethclient.Clien
 	return ethclient.NewClient(c), c, nil
 }
 
-// dialOpNodeClientWithTimeout attempts to dial the RPC provider using the provided
+// DialOpNodeClientWithTimeout attempts to dial the RPC provider using the provided
 // URL. If the dial doesn't complete within defaultDialTimeout seconds, this
 // method will return an error.
-func dialOpNodeClientWithTimeout(ctx context.Context, url string) (*client.OpNodeClient, *rpc.Client, error) {
+func DialOpNodeClientWithTimeout(ctx context.Context, url string) (*client.OpNodeClient, *rpc.Client, error) {
 	ctxt, cancel := context.WithTimeout(ctx, defaultDialTimeout)
 	defer cancel()
 
