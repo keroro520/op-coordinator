@@ -1,29 +1,88 @@
-# OpCoordinator
+# Coordinator
 
 ## Description
 
-OpCoordinator ensures that only one instance of Optimism sequencer is producing blocks at any given time.
+Coordinator ensures that there will be one and only one instance of Optimism sequencer is producing blocks at any given time.
 
 ## Motivation
 
-Optimism sequencer is a single point of failure. If it goes down, the whole optimistic rollup stops producing blocks.
-OpCoordinator comes to prevent this from happening, when the sequencer goes down, OpCoordinator can be used to switch
-to a backup sequencer.
+The Optimism sequencer plays a critical role in the production of blocks within the optimistic rollup. However, the current block production process lacks decentralization and is controlled by a single entity. Additionally, the existing implementation of the Optimism sequencer lacks a fail-over mechanism, making it a single point of failure. If the sequencer goes down, the entire optimistic rollup halts block production.
 
-## Design
+To address these issues, the Coordinator has been introduced. It ensures that only one instance of the Optimism sequencer is actively producing blocks, and in the event of a failure, it can be replaced by another instance.
 
-1. Kinds of nodes. There are 3 kinds of OP nodes: sequencers, bridges and rpcs. Sequencers are the nodes that produces blocks, bridges
-are the intermediate nodes that are used to propagate blocks&transactions between sequencers and rpc nodes, rpc nodes
-are the nodes that are used by users to interact with the optimistic rollup.
-2. Transactions propagation. Users send transactions to rpc nodes, and then the transactions will propagate to all the other nodes via P2P network.
-3. Blocks propagation. Sequencers will produce blocks and propagate them to all the other nodes via P2P network.
-4. Blocks production. Only one sequencer is allowed to produce blocks at any given time. This is ensured by OpCoordinator. A sequencer
-labeled with `optimism_sequencerStarted=true` requests permission to produce blocks from OpCoordinator before it starts
-producing blocks. And OpCoordinator approves the request if the requesting sequencer is matched with the current
-sequencer(recorded inside OpCoordinator memory). As OpCoordinator will record only one sequencer at any given time, we
-can ensure that only one sequencer is producing blocks at any given time.
-5. Handover. OpCoordinator will periodically check the health of all the nodes. If the current sequencer is down,
-OpCoordinator will switch to a healthy backup sequencer.
+Auto-Election is a feature that ensures only one instance of the Optimism sequencer is producing blocks at any given time.
+
+## Spec
+
+Optimism node maintains a state flag `sequencerActive` to indicate its right to produce blocks. Meanwhile, node provide a set of `admin_` HTTP API to query and control the state flag:
+- `admin_sequencerActive` query whether the node have right to active produce blocks
+- `admin_startSequencer` grant the node right to active produce blocks
+- `admin_stopSequencer` revoke the node right to active produce blocks
+
+So Coordinator control the right to active produce blocks via `admin_` API. It ensures that only one sequencer will peoduce blocks at any time, named as [active sequencer][active-sequencer], and act [fail-over] when the current [active sequencer][active-sequencer] is [fault detected][fault-detection]. The details will follow.
+
+
+### Glossary
+
+#### Sequencer
+
+[sequencer]: README.md#sequencer
+
+Refers the a node that runs with `--sequencer.enabled=true`.
+
+#### Active Sequencer
+
+[active-sequencer]: README.md#active-sequencer
+
+A [sequencer] maintains a state flag `sequencerActive` to indicate its right to produce blocks. When the `sequencerActive` is `true`, we refer this [sequencer] as an [active sequencer][active-sequencer], otherwise [inactive sequencer][inactive-sequencer].
+
+**Coordinator ensures that there will be at most 1 active sequencer at any time.**
+
+#### Inactive Sequencer
+
+[inactive-sequencer]: README.md#inactive-sequencer
+
+See also [active-sequencer].
+
+#### Stopped Hash
+
+[stopped-hash]: README.md#stopped-hash
+
+The hash returned by [active sequencer] when calling `admin_stopSequencer`.
+
+### Fault Detection
+
+[fault-detection]: README.md#fault-detection
+
+Fault detection mechanism is used for judging whether a sequencer is healthy.
+
+Coordinator periodically requests `optimism_syncStatus` and `eth_getBlockByNumber("latest")` to sequencers and predicates their health status. in addition, to eliminate false predication caused by network jitter, we choose latest 5 (configurable) responses, if the latest 5 responses are all errored, the corresponding sequencer is unhealthy, otherwise it's healthy.
+
+### Fail-Over
+
+[fail-over]: README.md#fail-over
+
+When the current active sequencer becomes unhealthy, the fail-over mechanism was activated.
+
+#### 1. Revoke Block-Production Right from Current Active Sequencer
+
+(1) query the state flag `sequencerActive` to current [active sequencer][active-sequencer] via `admin_sequencerActive`.
+
+(2) When the flag is true, call `admin_stopSequencer` to revoke block-production right and record the responded hash as [stopped hash][stopped-hash]; when the flag is false, call `optimism_syncStatus` and record the responsed `unsafe_l2.hash` as [stopped hash][stopped-hash].
+
+Whenever errors occur, go back to (1) and retry.
+
+#### 2. Elect A Candidate Sequencer
+
+Elect a new sequencer as candidate [active sequencer][active-sequencer]. The candidate sequencer must:
+
+1. Be healthy;
+2. Response OK for calling `eth_getBlockByHash(stopped hash)`;
+3. Maintain the highest chain number amount healthy sequencers.
+
+#### 3. Grant Block-Production Right to The Candidate Sequencer
+
+Grant block-production right to the candidate sequencer by calling `admin_startSequencer(stopped hash)`.
 
 ## Usage
 
