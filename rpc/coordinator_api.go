@@ -26,20 +26,20 @@ func (api *ElectionAPI) Version() (string, error) {
 }
 
 // RequestBuildingBlock is called by the sequencer to request a building block. According to the high-availability
-// design, the master node is the only node that can request a building block. If the master node is not the node
+// design, the active sequencer is the only node that can request a building block. If the active sequencer is not the node
 // that calls this function, the function returns an error. In another word, RequestBuildingBlock ensures that
-// only the master node will build new blocks, so that we enforce the data consistency.
+// only the active sequencer will build new blocks, so that we enforce the data consistency.
 //
 // Note that the `nodeName` parameter should be identical to the node name in the configuration file.
 func (api *ElectionAPI) RequestBuildingBlock(nodeName string) error {
-	master := api.election.Master()
-	if master == nil {
-		return fmt.Errorf("empty master")
+	activeSequencer := api.election.ActiveSequencer()
+	if activeSequencer == nil {
+		return fmt.Errorf("empty active sequencer")
 	}
 
-	if master.Name != nodeName {
+	if activeSequencer.Name != nodeName {
 		go func() {
-			api.log.Warn("Invalid master is requesting!", "master", master.Name, "node", nodeName)
+			api.log.Warn("Unmatched active sequencer is requesting!", "active sequencer", activeSequencer.Name, "node", nodeName)
 
 			node := api.election.Nodes[nodeName]
 			if node != nil && node.OpNode != nil {
@@ -51,27 +51,35 @@ func (api *ElectionAPI) RequestBuildingBlock(nodeName string) error {
 				}
 			}
 		}()
-		return fmt.Errorf("unknown master")
+		return fmt.Errorf("unmatched active sequencer")
 	}
 	api.log.Debug("Allow to produce blocks", "node", nodeName)
 	return nil
 }
 
-// GetMaster returns the current master node name.
-func (api *ElectionAPI) GetMaster() string {
-	if master := api.election.Master(); master == nil {
-		return ""
-	} else {
-		return master.Name
-	}
+// GetActiveSequencer returns the current active sequencer name.
+func (api *ElectionAPI) GetActiveSequencer() string {
+	return api.election.ActiveSequencerName()
 }
 
-// SetMaster sets the master node name manually.
-func (api *ElectionAPI) SetMaster(nodeName string) error {
+// GetMaster returns the current active sequencer name.
+// Deprecated, use GetActiveSequencer instead
+func (api *ElectionAPI) GetMaster() string {
+	return api.GetActiveSequencer()
+}
+
+// SetActiveSequencer sets the active sequencer name manually.
+func (api *ElectionAPI) SetActiveSequencer(nodeName string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 300*time.Second)
 	defer cancel()
 
-	return executeAdminCommand(ctx, api.election, core.NewSetMasterCommand(nodeName))
+	return executeAdminCommand(ctx, api.election, core.NewSetActiveSequencerCommand(nodeName))
+}
+
+// SetMaster sets the active sequencer name manually.
+// Deprecated, use SetActiveSequencer instead
+func (api *ElectionAPI) SetMaster(nodeName string) error {
+	return api.SetActiveSequencer(nodeName)
 }
 
 // StartElection enables the auto-detection and auto-election process. See StopElection for more details.
@@ -82,8 +90,8 @@ func (api *ElectionAPI) StartElection() error {
 	return executeAdminCommand(ctx, api.election, core.NewStartElectionCommand())
 }
 
-// StopElection disables the auto-detection and auto-election process. When the election is stopped, the master node
-// will not be changed even if the current master node is down. The election process can be started again by calling
+// StopElection disables the auto-detection and auto-election process. When the election is stopped, the active sequencer
+// will not be changed even if the current active sequencer is down. The election process can be started again by calling
 // StartElection.
 //
 // This API is used for debugging purpose and handling accidental situations.

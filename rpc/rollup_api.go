@@ -20,7 +20,7 @@ func NewRollupAPI(cfg config.Config, e *core.Election) *RollupAPI {
 }
 
 func (api *RollupAPI) SyncStatus(ctx context.Context) (*eth.SyncStatus, error) {
-	forwarder := api.election.Master()
+	forwarder := api.election.ActiveSequencer()
 	if forwarder == nil {
 		return nil, errors.New("forwarder is unavailable")
 	}
@@ -51,7 +51,7 @@ func (api *RollupAPI) Version(ctx context.Context) (*json.RawMessage, error) {
 }
 
 func (api *RollupAPI) callContext(ctx context.Context, method string, args ...interface{}) (*json.RawMessage, error) {
-	forwarder := api.election.Master()
+	forwarder := api.election.ActiveSequencer()
 	if forwarder == nil {
 		return nil, errors.New("forwarder is unavailable")
 	}

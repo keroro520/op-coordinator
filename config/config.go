@@ -5,10 +5,10 @@ import (
 )
 
 type BridgesConfig map[string]*NodeConfig
-type CandidatesConfig map[string]*NodeConfig
+type SequencersConfig map[string]*NodeConfig
 
 type Config struct {
-	Candidates CandidatesConfig `toml:"candidates" mapstructure:"candidates"`
+	Sequencers SequencersConfig `toml:"sequencers" mapstructure:"sequencers"`
 	Bridges    BridgesConfig    `toml:"bridges" mapstructure:"bridges"`
 	LogLevel   string           `toml:"log_level" mapstructure:"log_level"`
 	Metrics    MetricsConfig    `toml:"metrics"`
@@ -36,8 +36,7 @@ type RpcConfig struct {
 }
 
 type HealthCheckConfig struct {
-	IntervalMs            int64 `toml:"interval_ms" mapstructure:"interval_ms"`
-	FailureThresholdLast5 int   `toml:"failure_threshold_last5" mapstructure:"failure_threshold_last5"`
+	IntervalMs int64 `toml:"interval_ms" mapstructure:"interval_ms"`
 }
 
 type ElectionConfig struct {
@@ -51,17 +50,12 @@ type ForwardConfig struct {
 }
 
 func (cfg *Config) Check() error {
-	// Check HealthCheckConfig
-	if cfg.HealthCheck.FailureThresholdLast5 >= 5 {
-		return errors.New("failure_threshold_last5 must be less than 5")
-	}
-
 	// Check ElectionConfig
 	if cfg.Election.MinRequiredHealthyNodes <= 0 {
 		return errors.New("min_required_healthy_nodes must be greater than 0")
 	}
-	if cfg.Election.MinRequiredHealthyNodes > len(cfg.Candidates)+len(cfg.Bridges) {
-		return errors.New("min_required_healthy_nodes must be less than or equal to the number of candidates and bridges")
+	if cfg.Election.MinRequiredHealthyNodes > len(cfg.Sequencers)+len(cfg.Bridges) {
+		return errors.New("min_required_healthy_nodes must be less than or equal to the number of sequencers and bridges")
 	}
 
 	return nil

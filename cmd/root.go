@@ -55,7 +55,7 @@ func startHandleFunc(cmd *cobra.Command, args []string) error {
 	// Create clients for nodes
 	var err error
 	nodes := make(map[string]*types.Node)
-	for nodeName, nodeCfg := range config.Candidates {
+	for nodeName, nodeCfg := range config.Sequencers {
 		nodes[nodeName], err = types.NewNode(nodeName, nodeCfg.OpNodePublicRpcUrl, nodeCfg.OpGethPublicRpcUrl)
 		if err != nil {
 			return err
@@ -72,7 +72,6 @@ func startHandleFunc(cmd *cobra.Command, args []string) error {
 	hc := core.NewHealthChecker(
 		nodes,
 		time.Duration(config.HealthCheck.IntervalMs)*time.Millisecond,
-		config.HealthCheck.FailureThresholdLast5,
 		logger,
 	)
 	go hc.Start(context.Background())
@@ -92,7 +91,7 @@ func startHandleFunc(cmd *cobra.Command, args []string) error {
 	metrics.StartMetrics(metricsAddr)
 
 	for range time.Tick(time.Minute * 5) {
-		logger.Info("Coordinator status", "master", c.MasterName())
+		logger.Info("Coordinator status", "active sequencer", c.ActiveSequencerName())
 	}
 
 	return nil

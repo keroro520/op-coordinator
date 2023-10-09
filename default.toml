@@ -1,18 +1,18 @@
 [bridges]
 
 
-[candidates]
+[sequencers]
 
-[candidates.seq0]
+[sequencers.seq0]
 op_node_public_rpc_url = 'http://127.0.0.1:7545'
 op_geth_public_rpc_url = 'http://127.0.0.1:8545'
 
-# [candidates.seq1]
+# [sequencers.seq1]
 # op_node_public_rpc_url = 'http://127.0.0.1:8545'
 # op_node_p2p_rpc_url = 'http://127.0.0.1:8545'
 # op_geth_public_rpc_url = 'http://127.0.0.1:8545'
 # 
-# [candidates.seq2]
+# [sequencers.seq2]
 # op_node_public_rpc_url = 'http://127.0.0.1:8545'
 # op_node_p2p_rpc_url = 'http://127.0.0.1:8545'
 # op_geth_public_rpc_url = 'http://127.0.0.1:8545'

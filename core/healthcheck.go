@@ -14,6 +14,7 @@ type HealthChecker interface {
 }
 
 const CumulativeSlidingWindowSize = 5
+const FailureThresholdLast5 = 1
 
 // AccHealthChecker is used to check the health status of nodes and record the check results in a sliding window.
 //
@@ -29,7 +30,8 @@ type AccHealthChecker struct {
 	failureThresholdLast5       int
 }
 
-func NewHealthChecker(nodes map[string]*types.Node, interval time.Duration, failureThresholdLast5 int, log log.Logger) *AccHealthChecker {
+func NewHealthChecker(nodes map[string]*types.Node, interval time.Duration, log log.Logger) *AccHealthChecker {
+	failureThresholdLast5 := FailureThresholdLast5
 	if failureThresholdLast5 >= CumulativeSlidingWindowSize {
 		panic("failureThresholdLast5 should be less than CumulativeSlidingWindowSize")
 	}

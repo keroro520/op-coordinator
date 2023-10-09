@@ -18,14 +18,14 @@ type Election struct {
 	log    log.Logger
 	Config config.Config
 
-	master string
-	Nodes  map[string]*types.Node
+	activeSequencer string
+	Nodes           map[string]*types.Node
 
 	healthChecker HealthChecker
 
 	adminCh chan AdminCommand
 
-	prevStoppedHash *common.Hash
+	stoppedHash *common.Hash
 }
 
 func NewElection(config config.Config, hc HealthChecker, nodes map[string]*types.Node, log log.Logger) *Election {
@@ -39,19 +39,18 @@ func NewElection(config config.Config, hc HealthChecker, nodes map[string]*types
 }
 
 func (c *Election) StoppedHash() *common.Hash {
-	return c.prevStoppedHash
+	return c.stoppedHash
 }
 
-func (c *Election) MasterName() string {
-	return c.master
+func (c *Election) ActiveSequencerName() string {
+	return c.activeSequencer
 }
 
-func (c *Election) Master() *types.Node {
-	if c.master == "" {
+func (c *Election) ActiveSequencer() *types.Node {
+	if c.activeSequencer == "" {
 		return nil
 	}
-	master := c.Nodes[c.master]
-	return master
+	return c.Nodes[c.activeSequencer]
 }
 
 func (c *Election) AdminCh() chan AdminCommand {
@@ -62,18 +61,18 @@ func (c *Election) Start(ctx context.Context) {
 	c.loop(ctx)
 }
 
-func (c *Election) IsCandidate(nodeName string) bool {
-	return c.Config.Candidates[nodeName] != nil
+func (c *Election) IsSequencer(nodeName string) bool {
+	return c.Config.Sequencers[nodeName] != nil
 }
 
 func (c *Election) IsHealthy(nodeName string) bool {
 	return c.healthChecker.IsHealthy(nodeName)
 }
 
-func (c *Election) HealthyCandidates() []*types.Node {
+func (c *Election) HealthySequencers() []*types.Node {
 	healthy := make([]*types.Node, 0)
 	for _, node := range c.Nodes {
-		if c.IsCandidate(node.Name) && c.IsHealthy(node.Name) {
+		if c.IsSequencer(node.Name) && c.IsHealthy(node.Name) {
 			healthy = append(healthy, node)
 		}
 	}
@@ -91,7 +90,7 @@ func (c *Election) HealthyNodes() []*types.Node {
 }
 
 func (c *Election) loop(ctx context.Context) {
-	lastMasterFlagCheck := time.Now()
+	lastActiveFlagCheck := time.Now()
 	ticker := time.NewTicker(50 * time.Millisecond)
 	for {
 		select {
@@ -99,37 +98,37 @@ func (c *Election) loop(ctx context.Context) {
 			return
 		case <-ticker.C:
 			// Set metrics
-			master := c.Master()
+			activeSequencer := c.ActiveSequencer()
 			metrics.MetricElectionEnabled.Set(bool2float64(!c.Config.Election.Stopped))
-			metrics.MetricIsMaster.WithLabelValues("empty").Set(bool2float64(master == nil))
+			metrics.MetricIsActiveSequencer.WithLabelValues("empty").Set(bool2float64(activeSequencer == nil))
 			for _, node := range c.Nodes {
-				if c.IsCandidate(node.Name) {
-					isMaster := master != nil && master.Name == node.Name
-					metrics.MetricIsMaster.WithLabelValues(node.Name).Set(bool2float64(isMaster))
+				if c.IsSequencer(node.Name) {
+					isActive := activeSequencer != nil && activeSequencer.Name == node.Name
+					metrics.MetricIsActiveSequencer.WithLabelValues(node.Name).Set(bool2float64(isActive))
 				}
 			}
 
 			if c.Config.Election.Stopped {
-				c.log.Info("Auto-election is disabled, skip", "master", c.master)
+				c.log.Info("Auto-election is disabled, skip", "active sequencer", c.activeSequencer)
 
-			} else if c.Master() == nil {
+			} else if c.ActiveSequencer() == nil {
 				err := c.MaybeElect()
 				if err != nil {
 					c.log.Error("Maybe elect", "error", err)
 				}
 
-			} else if c.Master() != nil && !c.IsHealthy(c.master) {
-				err := c.RevokeMaster()
+			} else if c.ActiveSequencer() != nil && !c.IsHealthy(c.activeSequencer) {
+				err := c.RevokeActiveSequencer()
 				if err != nil {
-					c.log.Error("Revoke master", "error", err)
+					c.log.Error("Revoke active sequencer", "error", err)
 				}
 
-			} else if c.Master() != nil && lastMasterFlagCheck.Add(3*time.Second).Before(time.Now()) {
-				lastMasterFlagCheck = time.Now()
-				if active := c.CheckMasterIsActive(); !active {
-					c.log.Warn("Master is inactive, active it", "master", c.master)
-					if err := c.startSequencer(c.Nodes[c.master]); err != nil {
-						c.log.Error("start sequencer", "node", c.master, "error", err)
+			} else if c.ActiveSequencer() != nil && lastActiveFlagCheck.Add(3*time.Second).Before(time.Now()) {
+				lastActiveFlagCheck = time.Now()
+				if active := c.CheckFlagOfActiveSequencer(); !active {
+					c.log.Warn("ActiveSequencer is inactive, active it", "active sequencer", c.activeSequencer)
+					if err := c.startSequencer(c.Nodes[c.activeSequencer]); err != nil {
+						c.log.Error("start sequencer", "node", c.activeSequencer, "error", err)
 					}
 				}
 			}
@@ -140,13 +139,13 @@ func (c *Election) loop(ctx context.Context) {
 	}
 }
 
-// CheckSufficientHealthyNodes checks if there are sufficient healthy nodes to elect a new master.
+// CheckSufficientHealthyNodes checks if there are sufficient healthy nodes to elect a new active sequencer.
 func (c *Election) CheckSufficientHealthyNodes() bool {
 	return len(c.HealthyNodes()) >= c.Config.Election.MinRequiredHealthyNodes
 }
 
-func (c *Election) CheckCanonicalContainsPrevStoppedHash(node *types.Node) bool {
-	stoppedHash := c.prevStoppedHash
+func (c *Election) CheckCanonicalContainsStoppedHash(node *types.Node) bool {
+	stoppedHash := c.stoppedHash
 	if stoppedHash == nil || *stoppedHash == (common.Hash{}) {
 		return true
 	}
@@ -155,18 +154,18 @@ func (c *Election) CheckCanonicalContainsPrevStoppedHash(node *types.Node) bool 
 	return err == nil && block != nil
 }
 
-func (c *Election) CheckMasterIsActive() bool {
-	if c.master == "" {
+func (c *Election) CheckFlagOfActiveSequencer() bool {
+	activeSequencer := c.ActiveSequencer()
+	if activeSequencer == nil {
 		return false
 	}
 
-	master := c.Nodes[c.master]
-	active, err := master.OpNode.SequencerActive(context.Background())
+	active, err := activeSequencer.OpNode.SequencerActive(context.Background())
 	return err == nil && active
 }
 
-func (c *Election) findExistingMaster() *types.Node {
-	actives, err := FindActiveNodes(c.HealthyCandidates())
+func (c *Election) findExistingActiveSequencer() *types.Node {
+	actives, err := FindActiveNodes(c.HealthySequencers())
 	if err != nil {
 		return nil
 	}
@@ -180,11 +179,11 @@ func (c *Election) findExistingMaster() *types.Node {
 }
 
 func (c *Election) MaybeElect() error {
-	if c.Master() != nil {
+	if c.ActiveSequencer() != nil {
 		return nil
 	}
 
-	c.log.Info("Master is empty, start electing new master")
+	c.log.Info("ActiveSequencer is empty, start electing new active sequencer")
 
 	isSufficientHealthyNodes := c.CheckSufficientHealthyNodes()
 	if !isSufficientHealthyNodes {
@@ -193,17 +192,17 @@ func (c *Election) MaybeElect() error {
 
 	canonical, err := c.elect()
 	if err != nil || canonical == nil {
-		return fmt.Errorf("fail to elect master, error: %s", err)
+		return fmt.Errorf("fail to elect active sequencer, error: %s", err)
 	}
 
-	containsStoppedHash := c.CheckCanonicalContainsPrevStoppedHash(canonical)
+	containsStoppedHash := c.CheckCanonicalContainsStoppedHash(canonical)
 	if !containsStoppedHash {
-		return fmt.Errorf("canonical does not contains prev stopped hash, node: %s, stoppedHash: %s", canonical, c.prevStoppedHash)
+		return fmt.Errorf("canonical does not contains prev stopped hash, node: %s, stoppedHash: %s", canonical, c.stoppedHash)
 	}
 
-	err = c.setMaster(canonical.Name)
+	err = c.SetActiveSequencer(canonical.Name)
 	if err != nil {
-		return fmt.Errorf("fail to set master, node: %s, error: %s", canonical, err)
+		return fmt.Errorf("fail to set active sequencer, node: %s, error: %s", canonical.Name, err)
 	}
 
 	return nil
@@ -211,69 +210,76 @@ func (c *Election) MaybeElect() error {
 
 func (c *Election) elect() (*types.Node, error) {
 	c.log.Info("Start election")
-	if existingMaster := c.findExistingMaster(); existingMaster != nil {
-		return existingMaster, nil
+	if existingActiveSequencer := c.findExistingActiveSequencer(); existingActiveSequencer != nil {
+		return existingActiveSequencer, nil
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(c.Config.Election.MaxWaitingTimeForConvergenceMs)*time.Millisecond)
 	defer cancel()
-	WaitForNodesConvergence(c.log, ctx, c.HealthyCandidates())
+	WaitForNodesConvergence(c.log, ctx, c.HealthySequencers())
 
-	return FindCanonicalNode(c.HealthyCandidates())
+	return FindCanonicalNode(c.HealthySequencers())
 }
 
-// RevokeMaster revokes the leadership of the current master and returns the stopped hash.
-func (c *Election) RevokeMaster() error {
-	master := c.Master()
-	if master == nil {
+// RevokeActiveSequencer revokes the leadership of the current active sequencer and returns the stopped hash.
+func (c *Election) RevokeActiveSequencer() error {
+	activeSequencer := c.ActiveSequencer()
+	if activeSequencer == nil {
 		return nil
 	}
 
-	c.log.Warn("Revoking master", "master", c.master)
+	c.log.Warn("Revoking active sequencer", "active sequencer", c.activeSequencer)
 
-	_, err := master.OpNode.StopSequencer(context.Background())
-	if err != nil && !strings.Contains(err.Error(), "sequencer not running") {
-		c.log.Warn("Call admin_stopSequencer when revoke master", "node", master.Name, "error", err)
+	active, err := activeSequencer.OpNode.SequencerActive(context.Background())
+	if err != nil {
+		return fmt.Errorf("fail to call admin_sequencerActive, node: %s, error: %s", activeSequencer.Name, err)
 	}
 
-	// Double check if sequencer is not active
-	if active, err := master.OpNode.SequencerActive(context.Background()); err == nil && !active {
-		syncStatus, err := master.OpNode.SyncStatus(context.Background())
-		if err == nil && syncStatus.UnsafeL2.Hash != (common.Hash{}) {
-			c.master = ""
-			c.prevStoppedHash = &syncStatus.UnsafeL2.Hash
-
-			c.log.Info("Revoked master successfully", "node", master.Name, "prevStoppedHash", c.prevStoppedHash)
-			return nil
-		} else if err != nil {
-			return fmt.Errorf("fail to call optimism_syncStatus, node: %s, error: %s", master.Name, err)
-		} else {
-			return fmt.Errorf("fail to call optimism_syncStatus, node: %s, error: zero hash unsafe l2", master.Name)
+	var stopHash common.Hash
+	if active {
+		respStopHash, err := activeSequencer.OpNode.StopSequencer(context.Background())
+		if err != nil {
+			return fmt.Errorf("fail to call admin_stopSequencer, node: %s, error: %s", activeSequencer.Name, err)
 		}
+		if respStopHash == (common.Hash{}) {
+			return fmt.Errorf("admin_stopSequencer returns zero hash, node: %s", activeSequencer.Name)
+		}
+		stopHash = respStopHash
 	} else {
-		return fmt.Errorf("fail to call admin_sequencerActive, node: %s, active: %v, error: %s", master.Name, active, err)
+		syncStatus, err := activeSequencer.OpNode.SyncStatus(context.Background())
+		if err != nil {
+			return fmt.Errorf("fail to call optimism_syncStatus, node: %s, error: %s", activeSequencer.Name, err)
+		}
+		if syncStatus.UnsafeL2.Hash == (common.Hash{}) {
+			return fmt.Errorf("optimism_syncStatus returns zero hash, node: %s", activeSequencer.Name)
+		}
+
+		stopHash = syncStatus.UnsafeL2.Hash
 	}
+
+	c.stoppedHash = &stopHash
+	return nil
 }
 
-func (c *Election) setMaster(nodeName string) error {
+func (c *Election) SetActiveSequencer(nodeName string) error {
 	node := c.Nodes[nodeName]
 	if node == nil {
 		return errors.New("node is not found")
 	}
-	if !c.IsCandidate(node.Name) {
-		return errors.New("node is not a candidate")
+	if !c.IsSequencer(node.Name) {
+		return errors.New("node is not a sequencer")
 	}
-	if c.master == node.Name {
-		return errors.New("node is already the master")
+	if c.activeSequencer == node.Name {
+		return errors.New("node is already the active sequencer")
 	}
 
 	if err := c.startSequencer(node); err != nil {
 		return err
 	}
 
-	c.log.Info("assign master", "node", nodeName)
-	c.master = nodeName
-	c.prevStoppedHash = nil
+	c.log.Info("assign active sequencer", "node", nodeName)
+	c.activeSequencer = nodeName
+	c.stoppedHash = nil
 
 	return nil
 }

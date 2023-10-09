@@ -20,7 +20,7 @@ var (
 		Help:      "Indicates whether elections are enabled",
 	})
 
-	MetricIsMaster = promauto.NewGaugeVec(prometheus.GaugeOpts{
+	MetricIsActiveSequencer = promauto.NewGaugeVec(prometheus.GaugeOpts{
 		Namespace: Namespace,
 		Subsystem: Subsystem,
 		Name:      "elections_is_master",

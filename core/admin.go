@@ -13,8 +13,8 @@ type AdminCommand interface {
 	RespCh() chan error
 }
 
-// SetMasterCommand is used to set master node
-type SetMasterCommand struct {
+// SetActiveSequencerCommand is used to set the active sequencer
+type SetActiveSequencerCommand struct {
 	nodeName string
 	respCh   chan error
 }
@@ -27,8 +27,8 @@ type StopElectionCommand struct {
 	respCh chan error
 }
 
-func NewSetMasterCommand(nodeName string) SetMasterCommand {
-	return SetMasterCommand{
+func NewSetActiveSequencerCommand(nodeName string) SetActiveSequencerCommand {
+	return SetActiveSequencerCommand{
 		nodeName: nodeName,
 		respCh:   make(chan error),
 	}
@@ -46,31 +46,31 @@ func NewStopElectionCommand() StopElectionCommand {
 	}
 }
 
-func (cmd SetMasterCommand) Execute(election *Election) {
-	if !election.IsCandidate(cmd.nodeName) {
-		cmd.RespCh() <- errors.New("node is not a candidate")
+func (cmd SetActiveSequencerCommand) Execute(election *Election) {
+	if !election.IsSequencer(cmd.nodeName) {
+		cmd.RespCh() <- errors.New("node is not a sequencer")
 		return
 	}
-	if election.Master() != nil && election.Master().Name == cmd.nodeName {
-		cmd.RespCh() <- errors.New("node is already the master")
+	if election.ActiveSequencer() != nil && election.ActiveSequencer().Name == cmd.nodeName {
+		cmd.RespCh() <- errors.New("node is already the active sequencer")
 		return
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(election.Config.Election.MaxWaitingTimeForConvergenceMs)*time.Millisecond)
 	defer cancel()
-	WaitForNodesConvergence(election.log, ctx, election.HealthyCandidates())
+	WaitForNodesConvergence(election.log, ctx, election.HealthySequencers())
 
-	err := election.RevokeMaster()
+	err := election.RevokeActiveSequencer()
 	if err != nil {
 		cmd.RespCh() <- err
 		return
 	}
 
-	err = election.setMaster(cmd.nodeName)
+	err = election.SetActiveSequencer(cmd.nodeName)
 	cmd.RespCh() <- err
 }
 
-func (cmd SetMasterCommand) RespCh() chan error {
+func (cmd SetActiveSequencerCommand) RespCh() chan error {
 	return cmd.respCh
 }
 

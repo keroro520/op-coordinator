@@ -20,16 +20,16 @@ const HealthCheckInterval = 1000 * time.Millisecond
 const HealthCheckFailureThresholdLast5 = 1
 
 func defaultElection(t *testing.T, sysCfg op_e2e.SystemConfig, sys *op_e2e.System, log log.Logger) (*core.Election, *MockHealthChecker) {
-	candidatesCfg := make(map[string]*config.NodeConfig)
-	candidateNodes := make(map[string]*types.Node)
+	seqsCfg := make(map[string]*config.NodeConfig)
+	seqNodes := make(map[string]*types.Node)
 	bridgesCfg := make(map[string]*config.NodeConfig)
 	bridgeNodes := make(map[string]*types.Node)
 	for nodeName, opNode := range sys.RollupNodes {
 		node, err := types.NewNode(nodeName, opNode.HTTPEndpoint(), sys.Nodes[nodeName].HTTPEndpoint())
 		require.Nil(t, err)
 		if sysCfg.Nodes[node.Name].Driver.SequencerEnabled {
-			candidatesCfg[node.Name] = &config.NodeConfig{} // dummy config
-			candidateNodes[node.Name] = node
+			seqsCfg[node.Name] = &config.NodeConfig{} // dummy config
+			seqNodes[node.Name] = node
 		} else {
 			bridgesCfg[node.Name] = &config.NodeConfig{} // dummy config
 			bridgeNodes[node.Name] = node
@@ -37,7 +37,7 @@ func defaultElection(t *testing.T, sysCfg op_e2e.SystemConfig, sys *op_e2e.Syste
 	}
 
 	coordCfg := config.Config{
-		Candidates: candidatesCfg,
+		Sequencers: seqsCfg,
 		Bridges:    bridgesCfg,
 		HealthCheck: config.HealthCheckConfig{
 			IntervalMs:            HealthCheckInterval.Milliseconds(),
@@ -51,7 +51,7 @@ func defaultElection(t *testing.T, sysCfg op_e2e.SystemConfig, sys *op_e2e.Syste
 	}
 
 	hc := MockHealthChecker{healthyNodes: make(map[string]bool)}
-	coord := core.NewElection(coordCfg, &hc, candidateNodes, log)
+	coord := core.NewElection(coordCfg, &hc, seqNodes, log)
 
 	return coord, &hc
 }
@@ -122,11 +122,11 @@ func TestSingleSequencerStopSequencerExpectEmptyLeader(t *testing.T) {
 		return coord.IsHealthy("sequencer"), nil
 	}))
 	require.True(t, coord.IsHealthy("sequencer"))
-	require.Nil(t, coord.Master(), "Expect no master before election")
+	require.Nil(t, coord.ActiveSequencer(), "Expect no active sequencer before election")
 
 	err = coord.MaybeElect()
 	require.Nil(t, err, "Expect election success")
-	require.Equal(t, coord.MasterName(), "sequencer", "Expect sequencer to be master")
+	require.Equal(t, coord.ActiveSequencerName(), "sequencer", "Expect sequencer to be sequencer")
 	require.Nil(t, coord.StoppedHash())
 
 	becomeUnhealthy(hc, "sequencer")
@@ -134,13 +134,13 @@ func TestSingleSequencerStopSequencerExpectEmptyLeader(t *testing.T) {
 		return !coord.IsHealthy("sequencer"), nil
 	}))
 
-	require.Nil(t, coord.RevokeMaster(), "Expect master revoked")
-	require.Nil(t, coord.Master(), "Expect no master after revoke")
+	require.Nil(t, coord.RevokeActiveSequencer(), "Expect active sequencer revoked")
+	require.Nil(t, coord.ActiveSequencer(), "Expect no active sequencer after revoke")
 	require.NotNil(t, coord.StoppedHash())
 
 	err = coord.MaybeElect()
 	require.NotNil(t, err, "Expect election failed")
-	require.Nil(t, coord.Master(), "Expect no master after election failed")
+	require.Nil(t, coord.ActiveSequencer(), "Expect no active sequencer after election failed")
 	require.NotNil(t, coord.StoppedHash())
 }
 
@@ -159,11 +159,11 @@ func TestMultipleSequencersStopSequencerExpectEmptyLeaderIfPrevStoppedHashNotInc
 		return coord.IsHealthy("sequencer") && coord.IsHealthy("sequencer2"), nil
 	}))
 	require.True(t, coord.IsHealthy("sequencer") && coord.IsHealthy("sequencer2"))
-	require.Nil(t, coord.Master())
+	require.Nil(t, coord.ActiveSequencer())
 
 	err = coord.MaybeElect()
 	require.Nil(t, err, "Expect election success")
-	require.Equal(t, coord.MasterName(), "sequencer")
+	require.Equal(t, coord.ActiveSequencerName(), "sequencer")
 	require.Nil(t, coord.StoppedHash())
 
 	becomeUnhealthy(hc, "sequencer")
@@ -172,14 +172,14 @@ func TestMultipleSequencersStopSequencerExpectEmptyLeaderIfPrevStoppedHashNotInc
 	}))
 	require.True(t, !coord.IsHealthy("sequencer") && coord.IsHealthy("sequencer2"))
 
-	err = coord.RevokeMaster()
-	require.Nil(t, err, "Expect master revoked as it is stopped")
+	err = coord.RevokeActiveSequencer()
+	require.Nil(t, err, "Expect active sequencer revoked as it is stopped")
 	require.NotNil(t, coord.StoppedHash())
-	require.Nil(t, coord.Master(), "Expect no master after revoke")
+	require.Nil(t, coord.ActiveSequencer(), "Expect no active sequencer after revoke")
 
 	err = coord.MaybeElect()
 	require.ErrorContains(t, err, "canonical does not contains prev stopped hash")
-	require.Nil(t, coord.Master())
+	require.Nil(t, coord.ActiveSequencer())
 }
 
 func TestMultipleConnectedSequencers(t *testing.T) {
@@ -197,16 +197,16 @@ func TestMultipleConnectedSequencers(t *testing.T) {
 		return coord.IsHealthy("sequencer"), nil
 	}))
 	require.True(t, coord.IsHealthy("sequencer"))
-	require.Nil(t, coord.Master(), "Expect no master before election")
+	require.Nil(t, coord.ActiveSequencer(), "Expect no active sequencer before election")
 
 	err = coord.MaybeElect()
 	require.Nil(t, err, "Expect election success")
-	require.Equal(t, coord.MasterName(), "sequencer", "Expect sequencer to be master")
+	require.Equal(t, coord.ActiveSequencerName(), "sequencer", "Expect sequencer to be sequencer")
 	require.Nil(t, coord.StoppedHash())
 
 	ctx, ctxCancel := context.WithTimeout(context.Background(), time.Duration(10)*time.Second)
 	defer ctxCancel()
-	require.True(t, core.WaitForNodesConvergence(log, ctx, coord.HealthyCandidates()))
+	require.True(t, core.WaitForNodesConvergence(log, ctx, coord.HealthySequencers()))
 
 	becomeUnhealthy(hc, "sequencer")
 	require.Nil(t, utils.WaitFor(context.Background(), 1*time.Second, func() (bool, error) {
@@ -214,16 +214,16 @@ func TestMultipleConnectedSequencers(t *testing.T) {
 	}))
 	require.True(t, !coord.IsHealthy("sequencer") && coord.IsHealthy("sequencer2"))
 
-	err = coord.RevokeMaster()
-	require.Nil(t, err, "Expect master revoked as it is stopped")
+	err = coord.RevokeActiveSequencer()
+	require.Nil(t, err, "Expect active sequencer revoked as it is stopped")
 	require.NotNil(t, coord.StoppedHash())
-	require.Nil(t, coord.Master())
+	require.Nil(t, coord.ActiveSequencer())
 
 	time.Sleep(3 * time.Second)
 
 	err = coord.MaybeElect()
 	require.Nil(t, err, "Expect election success")
-	require.Equal(t, coord.MasterName(), "sequencer2", "Expect sequencer2 to be master")
+	require.Equal(t, coord.ActiveSequencerName(), "sequencer2", "Expect sequencer2 to be active sequencer")
 }
 
 func becomeUnhealthy(hc *MockHealthChecker, nodeName string) {

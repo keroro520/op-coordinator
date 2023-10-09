@@ -102,27 +102,27 @@ op-coordinator start --config config.yaml
 
 ### `coordinator` Namespace
 
-#### `coordinator_getMaster`
+#### `coordinator_getActiveSequencer`
 
-Returns the current master node name.
-
-RPC:
-
-```
-{"method": "coordinator_getMaster", "params": []}
-```
-
-#### `coordinator_setMaster`
-
-Sets the master node name manually.
+Returns the current active sequencer name.
 
 RPC:
 
 ```
-{"method": "coordinator_setMaster", "params": [nodeName]}
+{"method": "coordinator_getActiveSequencer", "params": []}
 ```
 
-- `nodeName`: A string represents the node name that will be set as the master node.
+#### `coordinator_setActiveSequencer`
+
+Sets the active sequencer name manually.
+
+RPC:
+
+```
+{"method": "coordinator_setActiveSequencer", "params": [nodeName]}
+```
+
+- `nodeName`: A string represents the node name that will be set as the active sequencer.
 
 #### `coordinator_startElection`
 
@@ -136,8 +136,8 @@ RPC:
 
 #### `coordinator_stopElection`
 
-Disables the auto-detection and auto-election process. When the election is stopped, the master node
-will not be changed even if the current master node is down. The election process can be started again by calling
+Disables the auto-detection and auto-election process. When the election is stopped, the active sequencer
+will not be changed even if the current active sequencer is down. The election process can be started again by calling
 StartElection.
 
 This API is used for debugging purpose and handling accidental situations.
@@ -163,9 +163,9 @@ RPC:
 Returns whether the requesting node is allowed to build a block.
 
 RequestBuildingBlock is called by the sequencer to request a building block. According to the high-availability
-design, the master node is the only node that can request a building block. If the master node is not the node
+design, the active sequencer is the only node that can request a building block. If the active sequencer is not the node
 that calls this function, the function returns an error. In another word, RequestBuildingBlock ensures that
-only the master node will build new blocks, so that we enforce the data consistency.
+only the active sequencer will build new blocks, so that we enforce the data consistency.
 
 Note that the `nodeName` parameter should be identical to the node name in the configuration file.
 

@@ -20,7 +20,7 @@ func NewEthAPI(election *core.Election) *EthAPI {
 //
 // This API is similar to the RPC `eth_getBlockByNumber` in go-ethereum.
 func (api *EthAPI) GetBlockByNumber(ctx context.Context, number rpc.BlockNumber, _detail bool) (*json.RawMessage, error) {
-	forwarder := api.election.Master()
+	forwarder := api.election.ActiveSequencer()
 	if forwarder == nil {
 		return nil, errors.New("forwarder is unavailable")
 	}
